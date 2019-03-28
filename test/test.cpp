@@ -42,6 +42,7 @@ TEST_CASE("constructor and destructor")
         CHECK_FALSE(o3);
         CHECK(o1.type() == typeid(void));
         CHECK(o3.type() == typeid(void));
+        CHECK(o1 == o3);
     }
 
     SECTION("copy construction from non-empty object")
@@ -52,6 +53,7 @@ TEST_CASE("constructor and destructor")
         CHECK(o2.type() == typeid(tracker));
         CHECK(o3.type() == typeid(tracker));
         CHECK(tracker::count == 1);
+        CHECK(o2 == o3);
     }
 
     SECTION("move construction from empty object")
@@ -61,6 +63,7 @@ TEST_CASE("constructor and destructor")
         CHECK_FALSE(o3);
         CHECK(o1.type() == typeid(void));
         CHECK(o3.type() == typeid(void));
+        CHECK(o1 == o3);
     }
 
     SECTION("move construction from non-empty object")
@@ -71,6 +74,8 @@ TEST_CASE("constructor and destructor")
         CHECK(o2.type() == typeid(void));
         CHECK(o3.type() == typeid(tracker));
         CHECK(tracker::count == 1);
+        CHECK(o1 == o2);
+        CHECK(o2 != o3);
     }
 
     SECTION("destruction")
@@ -84,6 +89,7 @@ TEST_CASE("constructor and destructor")
         {
             object o3(tracker{});
             CHECK(tracker::count == 2);
+            CHECK(o2 != o3);
         }
         CHECK(tracker::count == 1);
     }
@@ -130,6 +136,7 @@ TEST_CASE("shared ownership")
 
     SECTION("take address")
     {
+        CHECK(o1 == o2);
         CHECK(object_cast<int>(&o1) == object_cast<int>(&o2));
     }
 
@@ -138,5 +145,66 @@ TEST_CASE("shared ownership")
         ++object_cast<int>(o1);
         CHECK(object_cast<int>(o1) == 2);
         CHECK(object_cast<int>(o2) == 2);
+    }
+}
+
+TEST_CASE("assignment and relational operators")
+{
+    object o1;
+    object o2(tracker{});
+    object o3;
+
+    SECTION("empty object are identity")
+    {
+        CHECK(o1 == o3);
+        CHECK(o1 <= o3);
+        CHECK(o1 >= o3);
+        CHECK_FALSE(o1 != o3);
+        CHECK_FALSE(o1 < o3);
+        CHECK_FALSE(o1 > o3);
+    }
+
+    SECTION("self copy assignment of empty object")
+    {
+        o1 = o1;
+        CHECK(o1 == o3);
+    }
+
+    SECTION("self move assignment of empty object")
+    {
+        o1 = std::move(o1);
+        CHECK(o1 == o3);
+    }
+
+    SECTION("self copy assignment of non-empty object")
+    {
+        o2 = o2;
+        CHECK(tracker::count == 1);
+        CHECK(o2.type() == typeid(tracker));
+    }
+
+    SECTION("self move assignment of non-empty object")
+    {
+        o2 = std::move(o2);
+        CHECK(tracker::count == 1);
+        CHECK(o2.type() == typeid(tracker));
+    }
+
+    SECTION("assign empty object to non-empty object")
+    {
+        o2 = o3;
+        CHECK_FALSE(o2);
+        CHECK(o2 == o3);
+        CHECK(o1 == o2);
+        CHECK(tracker::count == 0);
+    }
+
+    SECTION("assign non-empty object to empty object")
+    {
+        o3 = o2;
+        CHECK(o3);
+        CHECK(o2 == o3);
+        CHECK(o1 != o3);
+        CHECK(tracker::count == 1);
     }
 }
