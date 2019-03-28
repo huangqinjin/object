@@ -25,6 +25,7 @@ class object
         long release(long c = 1) noexcept { return addref(-c); }
         virtual ~placeholder() = default;
         virtual const std::type_info& type() const noexcept = 0;
+        [[noreturn]] virtual void throws() { throw nullptr; }
     } *p;
 
     template<typename T>
@@ -32,6 +33,8 @@ class object
     {
         T v;
         const std::type_info& type() const noexcept final { return typeid(T); }
+
+        [[noreturn]] void throws() final { throw std::addressof(v); }
 
         template<typename... Args>
         explicit holder(std::true_type, Args&&... args) : v(std::forward<Args>(args)...) {}
@@ -146,6 +149,9 @@ public:
 
     template<typename ValueType>
     friend const ValueType* object_cast(const object* obj) noexcept;
+
+    template<typename ValueType>
+    friend const ValueType* polymorphic_object_cast(const object* obj) noexcept;
 };
 
 
@@ -163,6 +169,15 @@ const ValueType* object_cast(const object* obj) noexcept
     return nullptr;
 }
 
+template<typename ValueType>
+const ValueType* polymorphic_object_cast(const object* obj) noexcept
+{
+    try { if (obj && obj->p) obj->p->throws(); }
+    catch (const ValueType* p) { return p; }
+    catch (...) {}
+    return nullptr;
+}
+
 
 #define CAST(cast) \
 template<typename ValueType> ValueType* cast(object* obj) noexcept \
@@ -175,6 +190,7 @@ template<typename ValueType> const ValueType& cast(const object& obj) \
 
 CAST(unsafe_object_cast)
 CAST(object_cast)
+CAST(polymorphic_object_cast)
 #undef CAST
 
 

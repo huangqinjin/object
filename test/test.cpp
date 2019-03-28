@@ -14,6 +14,7 @@ namespace
         tracker(const tracker& t) noexcept : i(t.i), j(t.j) { ++count; }
         tracker(tracker&& t) noexcept : i(t.i), j(t.j) { ++count; t.i = t.j = 0; }
         ~tracker() noexcept { --count; i = j = 0; }
+        virtual int id() const noexcept { return i; }
     };
 
     long tracker::count = 0;
@@ -245,6 +246,29 @@ TEST_CASE("hold array")
     CHECK(a[0].j == 2);
     CHECK(a[1].i == 0);
     CHECK(a[1].j == 0);
+
+    o = {};
+    CHECK(tracker::count == 0);
+}
+
+TEST_CASE("polymorphic cast")
+{
+    struct derived : tracker
+    {
+        tracker _;
+        using tracker::tracker;
+        int id() const noexcept final { return j; }
+    };
+
+    object o(derived{11, 22});
+
+    CHECK(tracker::count == 2);
+    CHECK_THROWS_AS(object_cast<tracker>(o), bad_object_cast);
+    CHECK(polymorphic_object_cast<void>(&o) != nullptr);
+    CHECK_NOTHROW(polymorphic_object_cast<tracker>(o));
+
+    decltype(auto) t = polymorphic_object_cast<tracker>(o);
+    CHECK(t.id() == 22);
 
     o = {};
     CHECK(tracker::count == 0);
