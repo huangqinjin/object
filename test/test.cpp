@@ -8,11 +8,12 @@ namespace
     struct tracker
     {
         static long count;
+        int i, j;
 
-        tracker() noexcept { ++count; }
-        tracker(const tracker&) noexcept { ++count; }
-        tracker(tracker&&) noexcept { ++count; }
-        ~tracker() noexcept { --count; }
+        tracker(int i = 0, int j = 0) noexcept : i(i), j(j) { ++count; }
+        tracker(const tracker& t) noexcept : i(t.i), j(t.j) { ++count; }
+        tracker(tracker&& t) noexcept : i(t.i), j(t.j) { ++count; t.i = t.j = 0; }
+        ~tracker() noexcept { --count; i = j = 0; }
     };
 
     long tracker::count = 0;
@@ -207,4 +208,44 @@ TEST_CASE("assignment and relational operators")
         CHECK(o1 != o3);
         CHECK(tracker::count == 1);
     }
+}
+
+TEST_CASE("emplace")
+{
+    object o;
+
+    o = tracker{};
+    CHECK(o.type() == typeid(tracker));
+    CHECK(tracker::count == 1);
+
+    o = {};
+    CHECK_FALSE(o);
+    CHECK(tracker::count == 0);
+
+    tracker& t = o.emplace<tracker>(1, 2);
+    CHECK(std::addressof(t) == object_cast<tracker>(&o));
+    CHECK(tracker::count == 1);
+    CHECK(t.i == 1);
+    CHECK(t.j == 2);
+
+    int& i = o.emplace<int>();
+    CHECK(i == 0);
+    CHECK(tracker::count == 0);
+}
+
+TEST_CASE("hold array")
+{
+    object o;
+
+    decltype(auto) a = o.emplace<tracker[2]>(tracker{1, 2});
+    static_assert(std::is_same_v<tracker(&)[2], decltype(a)>);
+
+    CHECK(tracker::count == 2);
+    CHECK(a[0].i == 1);
+    CHECK(a[0].j == 2);
+    CHECK(a[1].i == 0);
+    CHECK(a[1].j == 0);
+
+    o = {};
+    CHECK(tracker::count == 0);
 }
