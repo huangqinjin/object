@@ -5,6 +5,8 @@
 #include <atomic>
 #include <typeinfo>
 #include <utility>        // move, exchange
+#include <memory>         // uninitialized_value_construct_n, destroy_n
+#include <new>            // operator new, operator delete, align_val_t, bad_array_new_length
 
 class bad_object_cast : public std::exception {};
 
@@ -52,6 +54,54 @@ class object
         static auto create(Args&&... args)
         {
             return new holder(std::is_constructible<T, Args&&...>{}, std::forward<Args>(args)...);
+        }
+    };
+
+    template<typename T>
+    class holder<T[]> : public placeholder
+    {
+        const std::ptrdiff_t n;
+        T v[1];
+
+        const std::type_info& type() const noexcept final { return typeid(T[]); }
+
+        explicit holder(std::ptrdiff_t n) : n(n), v{}
+        {
+            std::uninitialized_value_construct_n(v + 1, n - 1);
+        }
+
+        ~holder() override
+        {
+            std::destroy_n(v + 1, n - 1);
+        }
+
+        void* operator new(std::size_t sz, std::ptrdiff_t n)
+        {
+            return ::operator new(sz + (n - 1) * sizeof(T), std::align_val_t{alignof(holder)});
+        }
+
+        // called in create() if the constructor throws an exception, could be private
+        void operator delete(void* ptr, std::ptrdiff_t)
+        {
+            operator delete(ptr);
+        }
+
+    public:
+        // called in destructor of object when delete, must be public
+        void operator delete(void* ptr)
+        {
+            ::operator delete(ptr, std::align_val_t{alignof(holder)});
+        }
+
+        auto value() noexcept -> T(&)[]
+        {
+            return reinterpret_cast<T(&)[]>(v);
+        }
+
+        static auto create(std::ptrdiff_t n)
+        {
+            if(n < 1) throw std::bad_array_new_length();
+            return new(n) holder(n);
         }
     };
 

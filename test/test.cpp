@@ -8,16 +8,18 @@ namespace
     struct tracker
     {
         static long count;
-        int i, j;
+        static int seq;
+        int i, j, s;
 
-        tracker(int i = 0, int j = 0) noexcept : i(i), j(j) { ++count; }
-        tracker(const tracker& t) noexcept : i(t.i), j(t.j) { ++count; }
-        tracker(tracker&& t) noexcept : i(t.i), j(t.j) { ++count; t.i = t.j = 0; }
+        tracker(int i = 0, int j = 0) noexcept : i(i), j(j), s(++seq) { ++count; }
+        tracker(const tracker& t) noexcept : i(t.i), j(t.j), s(++seq) { ++count; }
+        tracker(tracker&& t) noexcept : i(t.i), j(t.j), s(++seq) { ++count; t.i = t.j = 0; }
         ~tracker() noexcept { --count; i = j = 0; }
-        virtual int id() const noexcept { return i; }
+        virtual int id() const noexcept { return s; }
     };
 
     long tracker::count = 0;
+    int tracker::seq = 0;
 }
 
 TEST_CASE("constructor and destructor")
@@ -269,6 +271,28 @@ TEST_CASE("polymorphic cast")
 
     decltype(auto) t = polymorphic_object_cast<tracker>(o);
     CHECK(t.id() == 22);
+
+    o = {};
+    CHECK(tracker::count == 0);
+}
+
+TEST_CASE("variable length array")
+{
+    tracker::seq = 0;
+    const int n = 3;
+
+    object o;
+    decltype(auto) a = o.emplace<tracker[]>(n);
+    static_assert(std::is_same_v<decltype(a), tracker(&)[]>);
+    CHECK(tracker::count == n);
+
+    for(int i = 0; i < n; ++i)
+        CHECK(a[i].id() == i + 1);
+
+    decltype(auto) b = object_cast<tracker[]>(o);
+    static_assert(std::is_same_v<decltype(b), tracker(&)[]>);
+    for(int i = 0; i < n; ++i)
+        CHECK(b[i].id() == i + 1);
 
     o = {};
     CHECK(tracker::count == 0);
