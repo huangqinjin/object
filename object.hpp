@@ -114,6 +114,14 @@ public:
         return p ? p->type() : typeid(void);
     }
 
+    bool operator==(const object& obj) const noexcept { return p == obj.p; }
+    bool operator!=(const object& obj) const noexcept { return p != obj.p; }
+    bool operator< (const object& obj) const noexcept { return p <  obj.p; }
+    bool operator> (const object& obj) const noexcept { return p >  obj.p; }
+    bool operator<=(const object& obj) const noexcept { return p <= obj.p; }
+    bool operator>=(const object& obj) const noexcept { return p >= obj.p; }
+
+public:
     template<typename ValueType, typename U = enable<ValueType>, typename... Args>
     decltype(auto) emplace(Args&&... args)
     {
