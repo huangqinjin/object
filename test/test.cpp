@@ -276,6 +276,10 @@ TEST_CASE("hold array")
         CHECK(a[1].j == ts[1].j);
     }
 
+    /**
+     *  MSVC Bug (16.0.0): rvalue reference to array are bound to lvalue.
+     *  The following section will fail for MSVC.
+     */
     SECTION("move array")
     {
         o = std::move(ts);
