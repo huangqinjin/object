@@ -239,18 +239,62 @@ TEST_CASE("emplace")
 TEST_CASE("hold array")
 {
     object o;
+    tracker ts[2]{{1, 2}, {3, 4}};
 
-    decltype(auto) a = o.emplace<tracker[2]>(tracker{1, 2});
-    static_assert(std::is_same_v<tracker(&)[2], decltype(a)>);
+    SECTION("emplace array with less elements")
+    {
+        decltype(auto) a = o.emplace<tracker[2]>(ts[0]);
+        static_assert(std::is_same_v<tracker(&)[2], decltype(a)>);
 
-    CHECK(tracker::count == 2);
-    CHECK(a[0].i == 1);
-    CHECK(a[0].j == 2);
-    CHECK(a[1].i == 0);
-    CHECK(a[1].j == 0);
+        CHECK(tracker::count == 4);
+        CHECK(a[0].i == 1);
+        CHECK(a[0].j == 2);
+        CHECK(a[1].i == 0);
+        CHECK(a[1].j == 0);
 
-    o = {};
-    CHECK(tracker::count == 0);
+        o = {};
+        CHECK(tracker::count == 2);
+    }
+
+    SECTION("copy array")
+    {
+        o = ts;
+
+        CHECK(tracker::count == 4);
+        CHECK(o.type() == typeid(tracker[2]));
+
+        auto& a = object_cast<tracker[2]>(o);
+
+        CHECK(a[0].i == 1);
+        CHECK(a[0].j == 2);
+        CHECK(a[1].i == 3);
+        CHECK(a[1].j == 4);
+
+        CHECK(a[0].i == ts[0].i);
+        CHECK(a[0].j == ts[0].j);
+        CHECK(a[1].i == ts[1].i);
+        CHECK(a[1].j == ts[1].j);
+    }
+
+    SECTION("move array")
+    {
+        o = std::move(ts);
+
+        CHECK(tracker::count == 4);
+        CHECK(o.type() == typeid(tracker[2]));
+
+        auto& a = object_cast<tracker[2]>(o);
+
+        CHECK(a[0].i == 1);
+        CHECK(a[0].j == 2);
+        CHECK(a[1].i == 3);
+        CHECK(a[1].j == 4);
+
+        CHECK(ts[0].i == 0);
+        CHECK(ts[0].j == 0);
+        CHECK(ts[1].i == 0);
+        CHECK(ts[1].j == 0);
+    }
 }
 
 TEST_CASE("polymorphic cast")
