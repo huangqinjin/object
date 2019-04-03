@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.1)
+cmake_minimum_required(VERSION 3.8)
 project(object_test)
 
 file(DOWNLOAD "https://github.com/catchorg/Catch2/releases/download/v2.7.0/catch.hpp"
