@@ -16,7 +16,48 @@ class object
     using rmcvr = std::remove_cv_t<std::remove_reference_t<T>>;
 
     template<typename T, typename U = rmcvr<T>>
-    using enable = std::enable_if_t<!std::is_same_v<object, U>, U>;
+    using enable = std::enable_if_t<!std::is_base_of_v<object, U>, U>;
+
+    template<typename ...Args>
+    struct is_args_one : std::false_type { using type = void; };
+
+    template<typename Arg>
+    struct is_args_one<Arg> : std::true_type { using type = Arg; };
+
+    template<typename T>
+    class held
+    {
+        T t;
+
+        template<std::size_t I, std::size_t N, typename U>
+        static U& get(U(&a)[N]) { return a[I]; }
+
+        template<std::size_t I, std::size_t N, typename U>
+        static U&& get(U(&&a)[N]) { return static_cast<U&&>(a[I]); }
+
+        template<typename... Args>
+        held(std::true_type, Args&&... args) : t(std::forward<Args>(args)...) {}
+
+        template<typename... Args>
+        held(std::false_type, Args&&... args) : t{std::forward<Args>(args)...} {}
+
+        template<typename A, std::size_t... I>
+        held(std::index_sequence<I...>, A&& a) : t{get<I>(static_cast<A&&>(a))...} {}
+
+    public:
+        using type = T;
+
+        T& value() noexcept { return t; }
+
+        template<typename... Args, typename U = rmcvr<typename is_args_one<Args...>::type>,
+                 typename = std::enable_if_t<std::is_array_v<T> && std::is_same_v<T, U>>>
+        held(int&&, Args&&... args)
+            : held(std::make_index_sequence<std::extent_v<U>>{}, std::forward<Args>(args)...) {}
+
+        template<typename... Args>
+        held(const int&, Args&&... args)
+            : held(std::is_constructible<T, Args&&...>{}, std::forward<Args>(args)...) {}
+    };
 
     class placeholder
     {
@@ -31,53 +72,20 @@ class object
     } *p;
 
     template<typename T>
-    class holder : public placeholder
+    class holder : public placeholder, public held<T>
     {
-        template<std::size_t I, std::size_t N, typename U>
-        U& get(U(&a)[N]) { return a[I]; }
-
-        template<std::size_t I, std::size_t N, typename U>
-        U&& get(U(&&a)[N]) { return static_cast<U&&>(a[I]); }
-
-        template<typename ...Args>
-        struct is_one : public std::false_type { using type = void; };
-
-        template<typename Arg>
-        struct is_one<Arg> : public std::true_type { using type = Arg; };
-
-        T v;
         const std::type_info& type() const noexcept final { return typeid(T); }
 
-        [[noreturn]] void throws() final { throw std::addressof(v); }
+        [[noreturn]] void throws() final { throw std::addressof(this->value()); }
 
         template<typename... Args>
-        explicit holder(std::true_type, Args&&... args) : v(std::forward<Args>(args)...) {}
-
-        template<typename... Args>
-        explicit holder(std::false_type, Args&&... args) : v{std::forward<Args>(args)...} {}
-
-        template<typename A, std::size_t... I>
-        explicit holder(std::index_sequence<I...>, A&& a) : v{get<I>(static_cast<A&&>(a))...} {}
+        explicit holder(Args&&... args) : held<T>(0, std::forward<Args>(args)...) {}
 
     public:
-        T& value() noexcept
-        {
-            return v;
-        }
-
         template<typename... Args>
         static auto create(Args&&... args)
         {
-            using O = is_one<Args...>;
-            using U = rmcvr<typename O::type>;
-            if constexpr (std::is_array_v<T> && O::value && std::is_same_v<T, U>)
-            {
-                return new holder(std::make_index_sequence<std::extent_v<U>>{}, std::forward<Args>(args)...);
-            }
-            else
-            {
-                return new holder(std::is_constructible<T, Args&&...>{}, std::forward<Args>(args)...);
-            }
+            return new holder(std::forward<Args>(args)...);
         }
     };
 
@@ -209,13 +217,6 @@ public:
 
     template<typename ValueType, typename U = enable<ValueType>>
     object(ValueType&& value) : p(holder<U>::create(std::forward<ValueType>(value))) {}
-
-    template<typename ValueType, typename U = enable<ValueType>>
-    object& operator=(ValueType&& value)
-    {
-        object(std::forward<ValueType>(value)).swap(*this);
-        return *this;
-    }
 
 public:
     template<typename ValueType>
