@@ -16,6 +16,7 @@ namespace
         tracker(tracker&& t) noexcept : i(t.i), j(t.j), s(++seq) { ++count; t.i = t.j = 0; }
         ~tracker() noexcept { --count; i = j = 0; }
         virtual int id() const noexcept { return s; }
+        int operator()(int k) noexcept { return i + j + k; }
     };
 
     long tracker::count = 0;
@@ -344,4 +345,55 @@ TEST_CASE("variable length array")
 
     o = {};
     CHECK(tracker::count == 0);
+}
+
+TEST_CASE("fn")
+{
+    auto lambda = [seed = 100](int d) mutable -> int { return d + (seed++); };
+    object::fn<int(int)> f = lambda;
+    object::fn<int(&)(int)> g = f;
+
+    CHECK(f(1) == 101);
+    CHECK(f(1) == 102);
+    CHECK(g(1) == 103);
+    CHECK(g(1) == 104);
+    CHECK(g.object() == f);
+    CHECK_NOTHROW(polymorphic_object_cast<decltype(lambda)>(f));
+
+    struct S
+    {
+        static int echo(int e) { return e; }
+    };
+
+    f = S::echo;
+
+    CHECK(f(1) == 1);
+    CHECK(f(1) == 1);
+    CHECK(g(1) == 1);
+    CHECK(g(1) == 1);
+    CHECK(g.object() == f);
+    CHECK_NOTHROW(polymorphic_object_cast<int(int)>(f));
+
+    tracker& t = f.emplace<int(int)>(tracker{1, 2});
+
+    CHECK(f(1) == 4);
+    CHECK(g(1) == 4);
+
+    ++t.i;
+
+    CHECK(f(1) == 5);
+    CHECK(g(1) == 5);
+    CHECK(g.object() == f);
+    CHECK_NOTHROW(polymorphic_object_cast<tracker>(f));
+
+
+    g = lambda;
+    CHECK(g(1) == 101);
+    CHECK(g(1) == 102);
+
+    g = S::echo;
+    CHECK(g(1) == 1);
+
+    auto h = [](object::fn<int(&)(int)> g) { return g(1); };
+    CHECK(h(tracker{1, 2}) == 4);
 }
