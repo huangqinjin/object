@@ -9,9 +9,11 @@
 #include <new>            // operator new, operator delete, align_val_t, bad_array_new_length
 
 class bad_object_cast : public std::exception {};
+class object_not_fn : public bad_object_cast {};
 
 class object
 {
+protected:
     template<typename T>
     using rmcvr = std::remove_cv_t<std::remove_reference_t<T>>;
 
@@ -137,9 +139,46 @@ class object
         }
     };
 
+    template<typename R, typename... Args>
+    class holder<R(Args...)> : public placeholder
+    {
+    public:
+        const std::type_info& type() const noexcept override { return typeid(R(Args...)); }
+        virtual R call(Args... args) = 0;
+
+        template<typename T, typename F = std::decay_t<T>,
+                 typename = std::enable_if_t<std::is_invocable_r_v<R, F, Args...>>>
+        static auto create(T&& t)
+        {
+            class fn : public holder, public held<F>
+            {
+                R call(Args... args) override
+                {
+                    return static_cast<R>(value()(std::forward<Args>(args)...));
+                }
+
+                [[noreturn]] void throws() override { throw std::addressof(value()); }
+
+            public:
+                std::remove_pointer_t<F>& value() noexcept
+                {
+                    if constexpr (std::is_pointer_v<F>) return *held<F>::value();
+                    else return held<F>::value();
+                }
+
+                explicit fn(T&& t) : held<F>(0, std::forward<T>(t)) {}
+            };
+
+            return new fn(std::forward<T>(t));
+        }
+    };
+
     explicit object(placeholder* p) noexcept : p(p) {}
 
 public:
+    template<typename F>
+    class fn;
+
     object() noexcept : p(nullptr) {}
 
     object(object&& obj) noexcept : p(obj.p)
@@ -229,6 +268,76 @@ public:
     friend const ValueType* polymorphic_object_cast(const object* obj) noexcept;
 };
 
+template<typename R, typename... Args>
+class object::fn<R(Args...)> : public object
+{
+public:
+    fn() noexcept = default;
+
+    template<typename F, typename T = std::decay_t<F>,
+             typename = std::enable_if_t<!std::is_base_of_v<fn, T> &&
+                                         std::is_invocable_r_v<R, T, Args...>>>
+    fn(F&& f)
+    {
+        emplace<R(Args...)>(std::forward<F>(f));
+    }
+
+    template<typename Object, typename = std::enable_if_t<std::is_same_v<Object, object>>>
+    fn(const Object& obj)
+    {
+        if (obj.type() != typeid(R(Args...))) throw object_not_fn{};
+        object::operator=(obj);
+    }
+
+    R operator()(Args... args) const
+    {
+        return static_cast<holder<R(Args...)>*>(p)->call(std::forward<Args>(args)...);
+    }
+};
+
+template<typename R, typename... Args>
+class object::fn<R(&)(Args...)>         // std::function_ref
+{
+    void* o;
+    R (*f)(void*, Args...);
+
+    static R callobj(void* o, Args... args)
+    {
+        return static_cast<R>((*static_cast<fn<R(Args...)>*>(o))(
+                std::forward<Args>(args)...));
+    }
+
+public:
+    fn(const fn<R(Args...)>& f) noexcept : o((void*)std::addressof(f)), f(&callobj) {}
+
+    template<typename F, typename = std::enable_if_t<!std::is_base_of_v<fn<R(Args...)>, rmcvr<F>> &&
+                                                     !std::is_base_of_v<fn<R(&)(Args...)>, rmcvr<F>> &&
+                                                     std::is_invocable_r_v<R, F, Args...>>>
+    fn(F&& f) noexcept : o((void*)std::addressof(f))
+    {
+        this->f = [](void* o, Args... args) -> R
+        {
+            return static_cast<R>((*(std::add_pointer_t<F>)(o))(
+                    std::forward<Args>(args)...));
+        };
+    }
+
+    template<typename Object, typename = std::enable_if_t<std::is_same_v<Object, object>>>
+    fn(const Object& obj) : o((void*)std::addressof(obj)), f(&callobj)
+    {
+        if (obj.type() != typeid(R(Args...))) throw object_not_fn{};
+    }
+
+    fn<R(Args...)> object() const noexcept
+    {
+        return f == &callobj ? *static_cast<fn<R(Args...)>*>(o) : fn<R(Args...)>{};
+    }
+
+    R operator()(Args... args) const
+    {
+        return (*f)(o, std::forward<Args>(args)...);
+    }
+};
 
 template<typename ValueType>
 const ValueType* unsafe_object_cast(const object* obj) noexcept
