@@ -40,6 +40,15 @@ TEST_CASE("constructor and destructor")
         CHECK(o2.type() == typeid(tracker));
     }
 
+    SECTION("inplace construction")
+    {
+        int seq = tracker::seq;
+        object o3(std::in_place_type<tracker>);
+        CHECK(o3);
+        CHECK(o3.type() == typeid(tracker));
+        CHECK(tracker::seq == ++seq);
+    }
+
     SECTION("copy construction from empty object")
     {
         object o3(o1);
@@ -104,6 +113,7 @@ TEST_CASE("object cast")
 {
     object o1;
     object o2(2);
+    object o3(std::in_place_type<tracker>, 1, 2);
 
     SECTION("cast empty object")
     {
@@ -131,6 +141,12 @@ TEST_CASE("object cast")
         CHECK(*unsafe_object_cast<int>(&o2) == 2);
         CHECK(std::addressof(unsafe_object_cast<int>(o2)) == unsafe_object_cast<int>(&o2));
         CHECK(object_cast<int>(&o2) == unsafe_object_cast<int>(&o2));
+
+        CHECK(o3.type() == typeid(tracker));
+        CHECK_NOTHROW(object_cast<tracker>(o3));
+        tracker& t = object_cast<tracker>(o3);
+        CHECK(t.i == 1);
+        CHECK(t.j == 2);
     }
 }
 
@@ -226,9 +242,11 @@ TEST_CASE("emplace")
     CHECK_FALSE(o);
     CHECK(tracker::count == 0);
 
+    int seq = tracker::seq;
     tracker& t = o.emplace<tracker>(1, 2);
     CHECK(std::addressof(t) == object_cast<tracker>(&o));
     CHECK(tracker::count == 1);
+    CHECK(tracker::seq == ++seq);
     CHECK(t.i == 1);
     CHECK(t.j == 2);
 
@@ -374,8 +392,10 @@ TEST_CASE("fn")
     CHECK(g.object() == f);
     CHECK_NOTHROW(polymorphic_object_cast<int(int)>(f));
 
-    tracker& t = f.emplace<int(int)>(tracker{1, 2});
+    int seq = tracker::seq;
+    tracker& t = f.emplace<tracker>(1, 2);
 
+    CHECK(tracker::seq == ++seq);
     CHECK(f(1) == 4);
     CHECK(g(1) == 4);
 
@@ -385,6 +405,17 @@ TEST_CASE("fn")
     CHECK(g(1) == 5);
     CHECK(g.object() == f);
     CHECK_NOTHROW(polymorphic_object_cast<tracker>(f));
+
+    f = std::in_place_type<tracker>;
+    CHECK(tracker::seq == ++seq);
+    CHECK(f(1) == 1);
+    CHECK(g(1) == 1);
+    CHECK(g.object() == f);
+    CHECK_NOTHROW(polymorphic_object_cast<tracker>(f));
+
+    polymorphic_object_cast<tracker>(f).i = 1;
+    CHECK(f(1) == 2);
+    CHECK(g(1) == 2);
 
 
     g = lambda;
