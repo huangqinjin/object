@@ -4,7 +4,7 @@
 #include <type_traits>
 #include <atomic>
 #include <typeinfo>
-#include <utility>        // move, exchange
+#include <utility>        // move, exchange, in_place_type_t
 #include <memory>         // uninitialized_value_construct_n, destroy_n
 #include <new>            // operator new, operator delete, align_val_t, bad_array_new_length
 
@@ -14,17 +14,23 @@ class object_not_fn : public bad_object_cast {};
 class object
 {
 protected:
-    template<typename T>
-    using rmcvr = std::remove_cv_t<std::remove_reference_t<T>>;
-
-    template<typename T, typename U = rmcvr<T>>
-    using enable = std::enable_if_t<!std::is_base_of_v<object, U>, U>;
-
     template<typename ...Args>
     struct is_args_one : std::false_type { using type = void; };
 
     template<typename Arg>
     struct is_args_one<Arg> : std::true_type { using type = Arg; };
+
+    template<typename T>
+    struct is_in_place_type : std::false_type { using type = T; };
+
+    template<typename T>
+    struct is_in_place_type<std::in_place_type_t<T>> : std::true_type { using type = T; };
+
+    template<typename T>
+    using rmcvr = std::remove_cv_t<std::remove_reference_t<T>>;
+
+    template<typename T, typename U = rmcvr<T>>
+    using enable = std::enable_if_t<!std::is_base_of_v<object, U> && !is_in_place_type<U>::value, U>;
 
     template<typename T>
     class held
@@ -142,34 +148,49 @@ protected:
     template<typename R, typename... Args>
     class holder<R(Args...)> : public placeholder
     {
-    public:
         const std::type_info& type() const noexcept override { return typeid(R(Args...)); }
+
+        template<typename F>
+        class fn : public held<F>
+        {
+        public:
+            std::remove_pointer_t<F>& value() noexcept
+            {
+                if constexpr (std::is_pointer_v<F>) return *held<F>::value();
+                else return held<F>::value();
+            }
+
+            template<typename... A>
+            explicit fn(std::false_type, A&&... a) : held<F>(0, std::forward<A>(a)...) {}
+
+            template<typename T, typename... A>
+            explicit fn(std::true_type, T&&, A&&... a) : fn(std::false_type{}, std::forward<A>(a)...) {}
+        };
+
+    public:
         virtual R call(Args... args) = 0;
 
-        template<typename T, typename F = std::decay_t<T>,
+        template<typename T, typename... A, typename D = std::decay_t<T>,
+                 typename F = typename is_in_place_type<D>::type,
                  typename = std::enable_if_t<std::is_invocable_r_v<R, F, Args...>>>
-        static auto create(T&& t)
+        static auto create(T&& t, A&&... a)
         {
-            class fn : public holder, public held<F>
+            class fn : public holder, public holder::template fn<F>
             {
+                using base = holder::fn<F>;
+
                 R call(Args... args) override
                 {
-                    return static_cast<R>(value()(std::forward<Args>(args)...));
+                    return static_cast<R>(base::value()(std::forward<Args>(args)...));
                 }
 
-                [[noreturn]] void throws() override { throw std::addressof(value()); }
+                [[noreturn]] void throws() override { throw std::addressof(base::value()); }
 
             public:
-                std::remove_pointer_t<F>& value() noexcept
-                {
-                    if constexpr (std::is_pointer_v<F>) return *held<F>::value();
-                    else return held<F>::value();
-                }
-
-                explicit fn(T&& t) : held<F>(0, std::forward<T>(t)) {}
+                explicit fn(T&& t, A&&... a) : base(is_in_place_type<D>{}, std::forward<T>(t), std::forward<A>(a)...) {}
             };
 
-            return new fn(std::forward<T>(t));
+            return new fn(std::forward<T>(t), std::forward<A>(a)...);
         }
     };
 
@@ -257,6 +278,10 @@ public:
     template<typename ValueType, typename U = enable<ValueType>>
     object(ValueType&& value) : p(holder<U>::create(std::forward<ValueType>(value))) {}
 
+    template<typename ValueType, typename... Args>
+    object(std::in_place_type_t<ValueType>, Args&&... args)
+        : p(holder<rmcvr<ValueType>>::create(std::forward<Args>(args)...)) {}
+
 public:
     template<typename ValueType>
     friend const ValueType* unsafe_object_cast(const object* obj) noexcept;
@@ -271,22 +296,29 @@ public:
 template<typename R, typename... Args>
 class object::fn<R(Args...)> : public object
 {
+    template<typename F>
+    using enable = std::enable_if_t<!std::is_base_of_v<fn, F> &&
+                                    std::is_invocable_r_v<R, F, Args...>>;
 public:
     fn() noexcept = default;
 
-    template<typename F, typename T = std::decay_t<F>,
-             typename = std::enable_if_t<!std::is_base_of_v<fn, T> &&
-                                         std::is_invocable_r_v<R, T, Args...>>>
-    fn(F&& f)
-    {
-        emplace<R(Args...)>(std::forward<F>(f));
-    }
+    template<typename T, typename F = typename is_in_place_type<std::decay_t<T>>::type,
+             typename = enable<F>, typename... A>
+    fn(T&& t, A&&... a) : object(std::in_place_type<R(Args...)>, std::forward<T>(t), std::forward<A>(a)...) {}
 
     template<typename Object, typename = std::enable_if_t<std::is_same_v<Object, object>>>
     fn(const Object& obj)
     {
         if (obj.type() != typeid(R(Args...))) throw object_not_fn{};
         object::operator=(obj);
+    }
+
+    template<typename T, typename F = std::decay_t<T>,
+            typename = std::enable_if_t<!is_in_place_type<F>::value>,
+            typename = enable<F>, typename... A>
+    decltype(auto) emplace(A&&... a)
+    {
+        return object::emplace<R(Args...)>(std::in_place_type<F>, std::forward<A>(a)...);
     }
 
     R operator()(Args... args) const
