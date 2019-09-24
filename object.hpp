@@ -194,11 +194,13 @@ protected:
         }
     };
 
-    explicit object(placeholder* p) noexcept : p(p) {}
-
 public:
     template<typename F>
     class fn;
+
+    using handle = placeholder*;
+
+    explicit object(handle p) noexcept : p(p) {}
 
     object() noexcept : p(nullptr) {}
 
@@ -257,6 +259,11 @@ public:
     const std::type_info& type() const noexcept
     {
         return p ? p->type() : typeid(void);
+    }
+
+    handle release() noexcept
+    {
+        return std::exchange(p, nullptr);
     }
 
     bool operator==(const object& obj) const noexcept { return p == obj.p; }
