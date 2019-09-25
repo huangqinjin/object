@@ -198,6 +198,9 @@ public:
     template<typename F>
     class fn;
 
+    template<typename T>
+    class ptr;
+
     using handle = placeholder*;
 
     explicit object(handle p) noexcept : p(p) {}
@@ -375,6 +378,33 @@ public:
     R operator()(Args... args) const
     {
         return (*f)(o, std::forward<Args>(args)...);
+    }
+};
+
+template<typename T>
+class object::ptr : public object
+{
+public:
+    ptr(const object& obj)
+    {
+        if (obj.type() != typeid(T)) throw bad_object_cast{};
+        object::operator=(obj);
+    }
+
+    ptr(object&& obj)
+    {
+        if (obj.type() != typeid(T)) throw bad_object_cast{};
+            swap(obj);
+    }
+
+    T* operator->() const noexcept
+    {
+        return unsafe_object_cast<T>(const_cast<object*>(this));
+    }
+
+    T& operator*() const noexcept
+    {
+        return *operator->();
     }
 };
 
