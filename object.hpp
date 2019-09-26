@@ -447,4 +447,14 @@ CAST(polymorphic_object_cast)
 #undef CAST
 
 
+#ifdef cobject_handle_copy
+#undef cobject_handle_copy
+#endif
+#ifdef cobject_handle_clear
+#undef cobject_handle_clear
+#endif
+#define cobject_handle_copy(p) (void*)object((const object&)(p)).release()
+#define cobject_handle_clear(p) (void)object((object::handle)(p))
+
+
 #endif //OBJECT_HPP
