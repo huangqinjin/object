@@ -303,6 +303,45 @@ public:
     friend ValueType* polymorphic_object_cast(object* obj) noexcept;
 };
 
+template<typename ValueType>
+ValueType* unsafe_object_cast(object* obj) noexcept
+{
+    return std::addressof(static_cast<object::holder<object::rmcvr<ValueType>>*>(obj->p)->value());
+}
+
+template<typename ValueType>
+ValueType* object_cast(object* obj) noexcept
+{
+    if(obj && obj->p && obj->p->type() == typeid(object::rmcvr<ValueType>))
+        return unsafe_object_cast<ValueType>(obj);
+    return nullptr;
+}
+
+template<typename ValueType>
+ValueType* polymorphic_object_cast(object* obj) noexcept
+{
+    try { if (obj && obj->p) obj->p->throws(); }
+    catch (ValueType* p) { return p; }
+    catch (...) {}
+    return nullptr;
+}
+
+
+#define CAST(cast) \
+template<typename ValueType> std::add_const_t<ValueType>* cast(const object* obj) noexcept \
+{ return cast<ValueType>(const_cast<object*>(obj)); } \
+template<typename ValueType> ValueType& cast(object& obj) \
+{ if(auto p = cast<ValueType>(std::addressof(obj))) return *p; throw bad_object_cast{}; } \
+template<typename ValueType> std::add_const_t<ValueType>& cast(const object& obj) \
+{ if(auto p = cast<ValueType>(std::addressof(obj))) return *p; throw bad_object_cast{}; } \
+
+
+CAST(unsafe_object_cast)
+CAST(object_cast)
+CAST(polymorphic_object_cast)
+#undef CAST
+
+
 template<typename R, typename... Args>
 class object::fn<R(Args...)> : public object
 {
@@ -407,44 +446,6 @@ public:
         return *operator->();
     }
 };
-
-template<typename ValueType>
-ValueType* unsafe_object_cast(object* obj) noexcept
-{
-    return std::addressof(static_cast<object::holder<object::rmcvr<ValueType>>*>(obj->p)->value());
-}
-
-template<typename ValueType>
-ValueType* object_cast(object* obj) noexcept
-{
-    if(obj && obj->p && obj->p->type() == typeid(object::rmcvr<ValueType>))
-        return unsafe_object_cast<ValueType>(obj);
-    return nullptr;
-}
-
-template<typename ValueType>
-ValueType* polymorphic_object_cast(object* obj) noexcept
-{
-    try { if (obj && obj->p) obj->p->throws(); }
-    catch (ValueType* p) { return p; }
-    catch (...) {}
-    return nullptr;
-}
-
-
-#define CAST(cast) \
-template<typename ValueType> std::add_const_t<ValueType>* cast(const object* obj) noexcept \
-{ return cast<ValueType>(const_cast<object*>(obj)); } \
-template<typename ValueType> ValueType& cast(object& obj) \
-{ if(auto p = cast<ValueType>(std::addressof(obj))) return *p; throw bad_object_cast{}; } \
-template<typename ValueType> std::add_const_t<ValueType>& cast(const object& obj) \
-{ if(auto p = cast<ValueType>(std::addressof(obj))) return *p; throw bad_object_cast{}; } \
-
-
-CAST(unsafe_object_cast)
-CAST(object_cast)
-CAST(polymorphic_object_cast)
-#undef CAST
 
 
 #ifdef cobject_handle_copy
