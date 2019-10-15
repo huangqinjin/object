@@ -3,7 +3,7 @@
 
 #include <type_traits>
 #include <atomic>
-#include <typeinfo>
+#include <typeindex>
 #include <utility>        // move, exchange, in_place_type_t
 #include <memory>         // uninitialized_value_construct_n, destroy_n
 #include <new>            // operator new, operator delete, align_val_t, bad_array_new_length
@@ -13,6 +13,20 @@ class object_not_fn : public bad_object_cast {};
 
 class object
 {
+public:
+    using type_index = std::type_index;
+
+    template<typename T>
+    static type_index type_id() noexcept
+    {
+        return typeid(T);
+    }
+
+    static type_index null_t() noexcept
+    {
+        return type_id<void>();
+    }
+
 protected:
     template<typename ...Args>
     struct is_args_one : std::false_type { using type = void; };
@@ -75,14 +89,14 @@ protected:
         long addref(long c = 1) noexcept { return c + refcount.fetch_add(c, std::memory_order_relaxed); }
         long release(long c = 1) noexcept { return addref(-c); }
         virtual ~placeholder() = default;
-        virtual const std::type_info& type() const noexcept = 0;
+        virtual type_index type() const noexcept = 0;
         [[noreturn]] virtual void throws() { throw nullptr; }
     } *p;
 
     template<typename T>
     class holder : public placeholder, public held<T>
     {
-        const std::type_info& type() const noexcept final { return typeid(T); }
+        type_index type() const noexcept final { return type_id<T>(); }
 
         [[noreturn]] void throws() final { throw std::addressof(this->value()); }
 
@@ -103,7 +117,7 @@ protected:
         const std::ptrdiff_t n;
         T v[1];
 
-        const std::type_info& type() const noexcept final { return typeid(T[]); }
+        type_index type() const noexcept final { return type_id<T[]>(); }
 
         explicit holder(std::ptrdiff_t n) : n(n), v{}
         {
@@ -148,7 +162,7 @@ protected:
     template<typename R, typename... Args>
     class holder<R(Args...)> : public placeholder
     {
-        const std::type_info& type() const noexcept override { return typeid(R(Args...)); }
+        type_index type() const noexcept override { return type_id<R(Args...)>(); }
 
         template<typename F>
         class fn : public held<F>
@@ -259,9 +273,9 @@ public:
         return p != nullptr;
     }
 
-    const std::type_info& type() const noexcept
+    type_index type() const noexcept
     {
-        return p ? p->type() : typeid(void);
+        return p ? p->type() : null_t();
     }
 
     handle release() noexcept
@@ -312,7 +326,7 @@ ValueType* unsafe_object_cast(object* obj) noexcept
 template<typename ValueType>
 ValueType* object_cast(object* obj) noexcept
 {
-    if(obj && obj->p && obj->p->type() == typeid(object::rmcvr<ValueType>))
+    if(obj && obj->p && obj->p->type() == object::type_id<object::rmcvr<ValueType>>())
         return unsafe_object_cast<ValueType>(obj);
     return nullptr;
 }
@@ -358,7 +372,7 @@ public:
     template<typename Object, typename = std::enable_if_t<std::is_same_v<Object, object>>>
     fn(const Object& obj)
     {
-        if (obj.type() != typeid(R(Args...))) throw object_not_fn{};
+        if (obj.type() != object::type_id<R(Args...)>()) throw object_not_fn{};
         object::operator=(obj);
     }
 
@@ -406,7 +420,7 @@ public:
     template<typename Object, typename = std::enable_if_t<std::is_same_v<Object, object>>>
     fn(const Object& obj) : o((void*)std::addressof(obj)), f(&callobj)
     {
-        if (obj.type() != typeid(R(Args...))) throw object_not_fn{};
+        if (obj.type() != object::type_id<R(Args...)>()) throw object_not_fn{};
     }
 
     fn<R(Args...)> object() const noexcept
@@ -426,13 +440,13 @@ class object::ptr : public object
 public:
     ptr(const object& obj)
     {
-        if (obj.type() != typeid(T)) throw bad_object_cast{};
+        if (obj.type() != object::type_id<T>()) throw bad_object_cast{};
         object::operator=(obj);
     }
 
     ptr(object&& obj)
     {
-        if (obj.type() != typeid(T)) throw bad_object_cast{};
+        if (obj.type() != object::type_id<T>()) throw bad_object_cast{};
             swap(obj);
     }
 

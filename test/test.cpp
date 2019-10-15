@@ -31,13 +31,13 @@ TEST_CASE("constructor and destructor")
     SECTION("default construction")
     {
         CHECK_FALSE(o1);
-        CHECK(o1.type() == typeid(void));
+        CHECK(o1.type() == object::null_t());
     }
 
     SECTION("construction from tracker")
     {
         CHECK(o2);
-        CHECK(o2.type() == typeid(tracker));
+        CHECK(o2.type() == object::type_id<tracker>());
     }
 
     SECTION("inplace construction")
@@ -45,7 +45,7 @@ TEST_CASE("constructor and destructor")
         int seq = tracker::seq;
         object o3(std::in_place_type<tracker>);
         CHECK(o3);
-        CHECK(o3.type() == typeid(tracker));
+        CHECK(o3.type() == object::type_id<tracker>());
         CHECK(tracker::seq == ++seq);
     }
 
@@ -54,8 +54,8 @@ TEST_CASE("constructor and destructor")
         object o3(o1);
         CHECK_FALSE(o1);
         CHECK_FALSE(o3);
-        CHECK(o1.type() == typeid(void));
-        CHECK(o3.type() == typeid(void));
+        CHECK(o1.type() == object::null_t());
+        CHECK(o3.type() == object::null_t());
         CHECK(o1 == o3);
     }
 
@@ -64,8 +64,8 @@ TEST_CASE("constructor and destructor")
         object o3(o2);
         CHECK(o2);
         CHECK(o3);
-        CHECK(o2.type() == typeid(tracker));
-        CHECK(o3.type() == typeid(tracker));
+        CHECK(o2.type() == object::type_id<tracker>());
+        CHECK(o3.type() == object::type_id<tracker>());
         CHECK(tracker::count == 1);
         CHECK(o2 == o3);
     }
@@ -75,8 +75,8 @@ TEST_CASE("constructor and destructor")
         object o3(std::move(o1));
         CHECK_FALSE(o1);
         CHECK_FALSE(o3);
-        CHECK(o1.type() == typeid(void));
-        CHECK(o3.type() == typeid(void));
+        CHECK(o1.type() == object::null_t());
+        CHECK(o3.type() == object::null_t());
         CHECK(o1 == o3);
     }
 
@@ -85,8 +85,8 @@ TEST_CASE("constructor and destructor")
         object o3(std::move(o2));
         CHECK_FALSE(o2);
         CHECK(o3);
-        CHECK(o2.type() == typeid(void));
-        CHECK(o3.type() == typeid(tracker));
+        CHECK(o2.type() == object::null_t());
+        CHECK(o3.type() == object::type_id<tracker>());
         CHECK(tracker::count == 1);
         CHECK(o1 == o2);
         CHECK(o2 != o3);
@@ -124,7 +124,7 @@ TEST_CASE("object cast")
 
     SECTION("cast non-empty object")
     {
-        CHECK(o2.type() == typeid(int));
+        CHECK(o2.type() == object::type_id<int>());
 
         CHECK_NOTHROW(object_cast<int>(o2));
         CHECK_THROWS_AS(object_cast<float>(o2), bad_object_cast);
@@ -142,7 +142,7 @@ TEST_CASE("object cast")
         CHECK(std::addressof(unsafe_object_cast<int>(o2)) == unsafe_object_cast<int>(&o2));
         CHECK(object_cast<int>(&o2) == unsafe_object_cast<int>(&o2));
 
-        CHECK(o3.type() == typeid(tracker));
+        CHECK(o3.type() == object::type_id<tracker>());
         CHECK_NOTHROW(object_cast<tracker>(o3));
         tracker& t = object_cast<tracker>(o3);
         CHECK(t.i == 1);
@@ -201,14 +201,14 @@ TEST_CASE("assignment and relational operators")
     {
         o2 = o2;
         CHECK(tracker::count == 1);
-        CHECK(o2.type() == typeid(tracker));
+        CHECK(o2.type() == object::type_id<tracker>());
     }
 
     SECTION("self move assignment of non-empty object")
     {
         o2 = std::move(o2);
         CHECK(tracker::count == 1);
-        CHECK(o2.type() == typeid(tracker));
+        CHECK(o2.type() == object::type_id<tracker>());
     }
 
     SECTION("assign empty object to non-empty object")
@@ -235,7 +235,7 @@ TEST_CASE("emplace")
     object o;
 
     o = tracker{};
-    CHECK(o.type() == typeid(tracker));
+    CHECK(o.type() == object::type_id<tracker>());
     CHECK(tracker::count == 1);
 
     o = {};
@@ -280,7 +280,7 @@ TEST_CASE("hold array")
         o = ts;
 
         CHECK(tracker::count == 4);
-        CHECK(o.type() == typeid(tracker[2]));
+        CHECK(o.type() == object::type_id<tracker[2]>());
 
         auto& a = object_cast<tracker[2]>(o);
 
@@ -300,7 +300,7 @@ TEST_CASE("hold array")
         o = std::move(ts);
 
         CHECK(tracker::count == 4);
-        CHECK(o.type() == typeid(tracker[2]));
+        CHECK(o.type() == object::type_id<tracker[2]>());
 
         auto& a = object_cast<tracker[2]>(o);
 
