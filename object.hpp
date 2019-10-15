@@ -3,7 +3,6 @@
 
 #include <type_traits>
 #include <atomic>
-#include <typeindex>
 #include <utility>        // move, exchange, in_place_type_t
 #include <memory>         // uninitialized_value_construct_n, destroy_n
 #include <new>            // operator new, operator delete, align_val_t, bad_array_new_length
@@ -13,13 +12,16 @@ class object_not_fn : public bad_object_cast {};
 
 class object
 {
+    template<typename T>
+    static void t() noexcept {}
+
 public:
-    using type_index = std::type_index;
+    using type_index = void (*)() noexcept;
 
     template<typename T>
     [[nodiscard]] static type_index type_id() noexcept
     {
-        return typeid(T);
+        return &t<std::remove_cv_t<T>>;
     }
 
     [[nodiscard]] static type_index null_t() noexcept
