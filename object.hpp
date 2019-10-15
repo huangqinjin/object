@@ -17,12 +17,12 @@ public:
     using type_index = std::type_index;
 
     template<typename T>
-    static type_index type_id() noexcept
+    [[nodiscard]] static type_index type_id() noexcept
     {
         return typeid(T);
     }
 
-    static type_index null_t() noexcept
+    [[nodiscard]] static type_index null_t() noexcept
     {
         return type_id<void>();
     }
@@ -89,14 +89,14 @@ protected:
         long addref(long c = 1) noexcept { return c + refcount.fetch_add(c, std::memory_order_relaxed); }
         long release(long c = 1) noexcept { return addref(-c); }
         virtual ~placeholder() = default;
-        virtual type_index type() const noexcept = 0;
+        [[nodiscard]] virtual type_index type() const noexcept = 0;
         [[noreturn]] virtual void throws() { throw nullptr; }
     } *p;
 
     template<typename T>
     class holder : public placeholder, public held<T>
     {
-        type_index type() const noexcept final { return type_id<T>(); }
+        [[nodiscard]] type_index type() const noexcept final { return type_id<T>(); }
 
         [[noreturn]] void throws() final { throw std::addressof(this->value()); }
 
@@ -105,7 +105,7 @@ protected:
 
     public:
         template<typename... Args>
-        static auto create(Args&&... args)
+        [[nodiscard]] static auto create(Args&&... args)
         {
             return new holder(std::forward<Args>(args)...);
         }
@@ -117,7 +117,7 @@ protected:
         const std::ptrdiff_t n;
         T v[1];
 
-        type_index type() const noexcept final { return type_id<T[]>(); }
+        [[nodiscard]] type_index type() const noexcept final { return type_id<T[]>(); }
 
         explicit holder(std::ptrdiff_t n) : n(n), v{}
         {
@@ -152,7 +152,7 @@ protected:
             return reinterpret_cast<T(&)[]>(v);
         }
 
-        static auto create(std::ptrdiff_t n)
+        [[nodiscard]] static auto create(std::ptrdiff_t n)
         {
             if(n < 1) throw std::bad_array_new_length();
             return new(n) holder(n);
@@ -162,7 +162,7 @@ protected:
     template<typename R, typename... Args>
     class holder<R(Args...)> : public placeholder
     {
-        type_index type() const noexcept override { return type_id<R(Args...)>(); }
+        [[nodiscard]] type_index type() const noexcept override { return type_id<R(Args...)>(); }
 
         template<typename F>
         class fn : public held<F>
@@ -187,7 +187,7 @@ protected:
         template<typename T, typename... A, typename D = std::decay_t<T>,
                  typename F = typename is_in_place_type<D>::type,
                  typename = std::enable_if_t<std::is_invocable_r_v<R, F, Args...>>>
-        static auto create(T&& t, A&&... a)
+        [[nodiscard]] static auto create(T&& t, A&&... a)
         {
             class fn : public holder, public holder::template fn<F>
             {
@@ -273,12 +273,12 @@ public:
         return p != nullptr;
     }
 
-    type_index type() const noexcept
+    [[nodiscard]] type_index type() const noexcept
     {
         return p ? p->type() : null_t();
     }
 
-    handle release() noexcept
+    [[nodiscard]] handle release() noexcept
     {
         return std::exchange(p, nullptr);
     }
@@ -455,7 +455,7 @@ public:
         return unsafe_object_cast<T>(const_cast<object*>(this));
     }
 
-    T& operator*() const noexcept
+    [[nodiscard]] T& operator*() const noexcept
     {
         return *operator->();
     }
