@@ -239,29 +239,15 @@ public:
             delete p;
     }
 
-    object exchange(const object& obj) noexcept
-    {
-        object old(std::exchange(p, obj.p));
-        if(p) p->addref();
-        return old;
-    }
-
-    object exchange(object&& obj) noexcept
-    {
-        object old(std::exchange(p, obj.p));
-        obj.p = nullptr;
-        return old;
-    }
-
     object& operator=(const object& obj) noexcept
     {
-        if(p != obj.p) exchange(obj);
+        if(p != obj.p) object(obj).swap(*this);
         return *this;
     }
 
     object& operator=(object&& obj) noexcept
     {
-        if(p != obj.p) exchange(std::move(obj));
+        if(p != obj.p) object(std::move(obj)).swap(*this);
         return *this;
     }
 
