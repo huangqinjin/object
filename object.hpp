@@ -437,32 +437,45 @@ class object::ptr : public object
 public:
     ptr(const object& obj)
     {
-        if (obj.type() != object::type_id<T>()) throw bad_object_cast{};
+        if (obj && obj.type() != type_id<T>()) throw bad_object_cast{};
         object::operator=(obj);
     }
 
     ptr(object&& obj)
     {
-        if (obj.type() != object::type_id<T>()) throw bad_object_cast{};
-            swap(obj);
+        if (obj && obj.type() != type_id<T>()) throw bad_object_cast{};
+        object::swap(obj);
     }
 
-    T* operator->() noexcept
+    void swap(ptr& p) noexcept
     {
+        return object::swap(p);
+    }
+
+    template<typename... Args>
+    decltype(auto) emplace(Args&&... args)
+    {
+        return object::emplace<T>(std::forward<Args>(args)...);
+    }
+
+    T* operator->()
+    {
+        if (p == nullptr) throw bad_object_cast{};
         return unsafe_object_cast<T>(this);
     }
 
-    const T* operator->() const noexcept
+    const T* operator->() const
     {
+        if (p == nullptr) throw bad_object_cast{};
         return unsafe_object_cast<T>(this);
     }
 
-    [[nodiscard]] T& operator*() noexcept
+    [[nodiscard]] T& operator*()
     {
         return *operator->();
     }
 
-    [[nodiscard]] const T& operator*() const noexcept
+    [[nodiscard]] const T& operator*() const
     {
         return *operator->();
     }
