@@ -357,11 +357,16 @@ public:
              typename = enable<F>, typename... A>
     fn(T&& t, A&&... a) : object(std::in_place_type<R(Args...)>, std::forward<T>(t), std::forward<A>(a)...) {}
 
-    template<typename Object, typename = std::enable_if_t<std::is_same_v<Object, object>>>
-    fn(const Object& obj)
+    template<typename Object, typename = std::enable_if_t<std::is_same_v<rmcvr<Object>, object>>>
+    fn(Object&& obj)
     {
-        if (obj.type() != object::type_id<R(Args...)>()) throw object_not_fn{};
-        object::operator=(obj);
+        if (obj && obj.type() != type_id<R(Args...)>()) throw object_not_fn{};
+        object::operator=(std::forward<Object>(obj));
+    }
+
+    void swap(fn& f) noexcept
+    {
+        return object::swap(f);
     }
 
     template<typename T, typename F = std::decay_t<T>,
@@ -374,6 +379,7 @@ public:
 
     R operator()(Args... args) const
     {
+        if (p == nullptr) throw object_not_fn{};
         return static_cast<holder<R(Args...)>*>(p)->call(std::forward<Args>(args)...);
     }
 };
@@ -391,7 +397,10 @@ class object::fn<R(&)(Args...)>         // std::function_ref
     }
 
 public:
-    fn(const fn<R(Args...)>& f) noexcept : o((void*)std::addressof(f)), f(&callobj) {}
+    fn(const fn<R(Args...)>& f) : o((void*)std::addressof(f)), f(&callobj)
+    {
+        if (!f) throw object_not_fn{};
+    }
 
     template<typename F, typename = std::enable_if_t<!std::is_base_of_v<fn<R(Args...)>, rmcvr<F>> &&
                                                      !std::is_base_of_v<fn<R(&)(Args...)>, rmcvr<F>> &&
