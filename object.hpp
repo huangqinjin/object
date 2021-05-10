@@ -217,6 +217,9 @@ public:
     template<typename T>
     class ptr;
 
+    template<typename T>
+    class ref;
+
     using handle = placeholder*;
 
     explicit object(handle p) noexcept : p(p) {}
@@ -479,6 +482,90 @@ public:
     {
         return *operator->();
     }
+};
+
+template<typename T>
+class object::ref : public object
+{
+public:
+    ref(const object& obj)
+    {
+        if (obj.type() != type_id<T>()) throw bad_object_cast{};
+        object::operator=(obj);
+    }
+
+    ref(object&& obj)
+    {
+        if (obj.type() != type_id<T>()) throw bad_object_cast{};
+        object::swap(obj);
+    }
+
+    ref(const ptr<T>& p)
+    {
+        if (!p) throw bad_object_cast{};
+        object::operator=(p);
+    }
+
+    ref(ptr<T>&& p)
+    {
+        if (!p) throw bad_object_cast{};
+        object::swap(p);
+    }
+
+    void swap(ref& r) noexcept
+    {
+        return object::swap(r);
+    }
+
+    [[nodiscard]] handle release() const noexcept
+    {
+        return object(*this).release();
+    }
+
+    template<typename... Args>
+    decltype(auto) emplace(Args&&... args)
+    {
+        return object::emplace<T>(std::forward<Args>(args)...);
+    }
+
+    [[nodiscard]] ptr<T> operator&() const noexcept
+    {
+        ptr<T> p;
+        object(*this).swap(p);
+        return p;
+    }
+
+    operator T&() noexcept
+    {
+        return *unsafe_object_cast<T>(this);
+    }
+
+    operator const T&() const noexcept
+    {
+        return *unsafe_object_cast<T>(this);
+    }
+
+    T* operator->() noexcept
+    {
+        return unsafe_object_cast<T>(this);
+    }
+
+    const T* operator->() const noexcept
+    {
+        return unsafe_object_cast<T>(this);
+    }
+
+#ifdef OBJECT_HAVE_OPERATOR_DOT // someday we could have this
+    T& operator.() noexcept
+    {
+        return *this;
+    }
+
+    const T& operator.() const noexcept
+    {
+        return *this;
+    }
+#endif
 };
 
 
