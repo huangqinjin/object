@@ -357,6 +357,28 @@ TEST_CASE("variable length array")
     for(int i = 0; i < n; ++i)
         CHECK(b[i].id() == i + 1);
 
+    object::vec<tracker> vv = o;
+    CHECK(vv.size() == n);
+    {
+        int i = 0;
+        for(auto& t : vv)
+        {
+            CHECK(t.id() == ++i);
+            t.s = 0;
+        }
+    }
+    for (std::size_t i = 0; i < vv.size(); ++i)
+        CHECK(vv[i].id() == 0);
+
+    object::vec<tracker&> rv = vv;
+    CHECK(tracker::count == n);
+
+    vv = {};
+    CHECK(vv.empty());
+    CHECK(rv.size() == n);
+    for(const auto& t : rv)
+        CHECK(t.id() == 0);
+
     o = {};
     CHECK(tracker::count == 0);
 }
