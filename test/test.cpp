@@ -3,6 +3,8 @@
 
 #include "object.hpp"
 
+#include <thread>
+
 namespace
 {
     struct tracker
@@ -445,4 +447,42 @@ TEST_CASE("fn")
 
     auto h = [](object::fn<int(&)(int)> g) { return g(1); };
     CHECK(h(tracker{1, 2}) == 4);
+}
+
+TEST_CASE("atomic")
+{
+    tracker::seq = 0;
+    object::atomic atomic(std::in_place_type<tracker>);
+    CHECK(tracker::count == 1);
+
+    atomic.lock();
+    CHECK(!atomic.try_lock());
+
+    std::thread t([&] {
+        object n(std::in_place_type<tracker>);
+
+        atomic.set(std::in_place_type<tracker>);
+        atomic.unlock();
+
+        object o;
+        while (!atomic.compare_exchange_weak(o, n)) o = {};
+    });
+
+    atomic.lock();
+    atomic.unlock();
+
+    CHECK(atomic.try_lock());
+    atomic.unlock();
+
+    CHECK(object_cast<tracker>(atomic.load()).id() == 3);
+    CHECK(tracker::count == 2);
+
+    atomic.store({});
+
+    t.join();
+
+    CHECK(object_cast<tracker>(atomic.exchange(std::in_place_type<tracker>)).id() == 2);
+    CHECK(tracker::count == 1);
+
+    CHECK(object_cast<tracker>(atomic).id() == 4);
 }

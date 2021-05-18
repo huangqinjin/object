@@ -8,3 +8,6 @@ file(DOWNLOAD "https://github.com/catchorg/Catch2/releases/download/v2.7.0/catch
 file(GLOB SRC_FILES *.cpp)
 
 add_executable(${PROJECT_NAME} ${SRC_FILES})
+
+find_package(Threads REQUIRED)
+target_link_libraries(${PROJECT_NAME} PUBLIC Threads::Threads)
