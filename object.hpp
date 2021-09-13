@@ -198,9 +198,9 @@ protected:
                  typename = std::enable_if_t<std::is_invocable_r_v<R, F, Args...>>>
         [[nodiscard]] static auto create(T&& t, A&&... a)
         {
-            class fn : public holder, public holder::template fn<F>
+            class impl : public holder, public fn<F>
             {
-                using base = holder::fn<F>;
+                using base = fn<F>;
 
                 R call(Args... args) override
                 {
@@ -210,10 +210,10 @@ protected:
                 [[noreturn]] void throws() override { throw std::addressof(base::value()); }
 
             public:
-                explicit fn(T&& t, A&&... a) : base(is_in_place_type<D>{}, std::forward<T>(t), std::forward<A>(a)...) {}
+                explicit impl(T&& t, A&&... a) : base(is_in_place_type<D>{}, std::forward<T>(t), std::forward<A>(a)...) {}
             };
 
-            return new fn(std::forward<T>(t), std::forward<A>(a)...);
+            return new impl(std::forward<T>(t), std::forward<A>(a)...);
         }
     };
 
