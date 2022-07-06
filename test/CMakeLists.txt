@@ -1,9 +1,9 @@
 cmake_minimum_required(VERSION 3.8)
 project(object_test)
 
-file(DOWNLOAD "https://github.com/catchorg/Catch2/releases/download/v2.7.0/catch.hpp"
+file(DOWNLOAD "https://github.com/catchorg/Catch2/releases/download/v2.13.9/catch.hpp"
               "${CMAKE_CURRENT_LIST_DIR}/catch.hpp"
-              EXPECTED_HASH SHA512=24e918e61d27a3047a78014fdbdc7dddaf90c40942d72d6fc92343fd6b078ef1f4fd6723a22b6c92b32bec361192edf5122332d3ac591b231ab37336492e8013)
+              EXPECTED_HASH SHA512=3ff722c4c85ff16e6121705c1a5b97f51fabab13dc8594efc213d81bbc485dc4af7bec1ffbe55a732b363e605e9a4c0703e28c975e3b3ea676e2889fedd01b43)
 
 file(GLOB SRC_FILES *.cpp)
 
