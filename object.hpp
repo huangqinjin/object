@@ -424,7 +424,7 @@ public:
 
     ~atomic() noexcept
     {
-        auto v = storage.load(std::memory_order_relaxed);
+        auto v = storage.load(std::memory_order_relaxed) & ~mask;
         (void)object(reinterpret_cast<handle>(v));
     }
 
@@ -513,7 +513,13 @@ public:
 #if defined(__cpp_lib_atomic_wait)
     void wait(object old, std::memory_order order = std::memory_order_seq_cst) const noexcept
     {
-        return storage.wait(old.p, order);
+        auto o = reinterpret_cast<storage_t>(old.p);
+        auto v = o;
+        while (o == (v & ~mask))
+        {
+            storage.wait(v, order);
+            v = storage.load(std::memory_order_relaxed);
+        }
     }
 
     void notify_one() noexcept
