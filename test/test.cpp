@@ -455,6 +455,9 @@ TEST_CASE("atomic")
     object::atomic atomic(std::in_place_type<tracker>);
     CHECK(tracker::count == 1);
 
+    CHECK(atomic.try_lock());
+    atomic.unlock();
+
     atomic.lock();
     CHECK(!atomic.try_lock());
 
@@ -471,9 +474,6 @@ TEST_CASE("atomic")
     atomic.lock();
     atomic.unlock();
 
-    CHECK(atomic.try_lock());
-    atomic.unlock();
-
     CHECK(object_cast<tracker>(atomic.load()).id() == 3);
     CHECK(tracker::count == 2);
 
@@ -484,7 +484,9 @@ TEST_CASE("atomic")
     CHECK(object_cast<tracker>(atomic.exchange(std::in_place_type<tracker>)).id() == 2);
     CHECK(tracker::count == 1);
 
-    CHECK(object_cast<tracker>(atomic).id() == 4);
+    object obj = atomic;
+    CHECK(obj.type() == object::type_id<tracker>());
+    CHECK(object_cast<tracker>(obj).id() == 4);
 }
 
 TEST_CASE("from")

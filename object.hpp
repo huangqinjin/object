@@ -55,7 +55,7 @@ protected:
     using rmcvr = std::remove_cv_t<std::remove_reference_t<T>>;
 
     template<typename T, typename U = rmcvr<T>>
-    using enable = std::enable_if_t<!std::is_base_of_v<object, U> && !is_in_place_type<U>::value, U>;
+    using enable = std::enable_if_t<!std::is_convertible_v<U, object> && !is_in_place_type<U>::value, U>;
 
     template<typename T>
     class held
@@ -341,7 +341,7 @@ public:
     bool operator>=(const object& obj) const noexcept { return p >= obj.p; }
 
 public:
-    template<typename ValueType, typename U = enable<ValueType>, typename... Args>
+    template<typename ValueType, typename U = rmcvr<ValueType>, typename... Args>
     decltype(auto) emplace(Args&&... args)
     {
         auto q = holder<U>::create(std::forward<Args>(args)...);
@@ -490,13 +490,6 @@ public:
     {
         auto v = storage.load(std::memory_order_relaxed) & ~mask;
         (void)object(reinterpret_cast<handle>(v));
-    }
-
-    // need non-const version, otherwise constructor of object would be used
-    // during implicit conversion from non-const atomic to object.
-    operator object() noexcept
-    {
-        return load();
     }
 
     operator object() const noexcept
