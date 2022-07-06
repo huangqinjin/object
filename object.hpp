@@ -92,6 +92,68 @@ protected:
             : held(std::is_constructible<T, Args&&...>{}, std::forward<Args>(args)...) {}
     };
 
+    template<typename T>
+    class held<T[]>
+    {
+        const std::ptrdiff_t n;
+        T v[1];
+
+    public:
+        explicit held(std::ptrdiff_t n) : n(n), v{}
+        {
+            std::uninitialized_value_construct_n(v + 1, n - 1);
+        }
+
+        ~held()
+        {
+            std::destroy_n(v + 1, n - 1);
+        }
+
+        void* operator new(std::size_t sz, std::ptrdiff_t n)
+        {
+            return ::operator new(sz + (n - 1) * sizeof(T));
+        }
+
+        void* operator new(std::size_t sz, std::align_val_t al, std::ptrdiff_t n)
+        {
+            return ::operator new(sz + (n - 1) * sizeof(T), al);
+        }
+
+        // called in create() if the constructor throws an exception, could be private
+        void operator delete(void* ptr, std::ptrdiff_t)
+        {
+            return ::operator delete(ptr);
+        }
+
+        // called in create() if the constructor throws an exception, could be private
+        void operator delete(void* ptr, std::align_val_t al, std::ptrdiff_t)
+        {
+            return ::operator delete(ptr, al);
+        }
+
+        // called in destructor of object when delete, must be public
+        void operator delete(void* ptr)
+        {
+            return ::operator delete(ptr);
+        }
+
+        // called in destructor of object when delete, must be public
+        void operator delete(void* ptr, std::align_val_t al)
+        {
+            return ::operator delete(ptr, al);
+        }
+
+        auto value() noexcept -> T(&)[]
+        {
+            return reinterpret_cast<T(&)[]>(v);
+        }
+
+        std::ptrdiff_t length() const noexcept
+        {
+            return n;
+        }
+    };
+
     class placeholder
     {
         std::atomic<long> refcount = 1;
@@ -104,7 +166,7 @@ protected:
         [[noreturn]] virtual void throws() { throw nullptr; }
     } *p;
 
-    template<typename T>
+    template<typename T, typename ...>
     class holder : public placeholder, public held<T>
     {
         [[nodiscard]] type_index type() const noexcept final { return type_id<T>(); }
@@ -123,51 +185,13 @@ protected:
     };
 
     template<typename T>
-    class holder<T[]> : public placeholder
+    class holder<T[]> : public placeholder, public held<T[]>
     {
-        const std::ptrdiff_t n;
-        T v[1];
-
         [[nodiscard]] type_index type() const noexcept final { return type_id<T[]>(); }
 
-        explicit holder(std::ptrdiff_t n) : n(n), v{}
-        {
-            std::uninitialized_value_construct_n(v + 1, n - 1);
-        }
-
-        ~holder() override
-        {
-            std::destroy_n(v + 1, n - 1);
-        }
-
-        void* operator new(std::size_t sz, std::ptrdiff_t n)
-        {
-            return ::operator new(sz + (n - 1) * sizeof(T), std::align_val_t{alignof(holder)});
-        }
-
-        // called in create() if the constructor throws an exception, could be private
-        void operator delete(void* ptr, std::ptrdiff_t)
-        {
-            operator delete(ptr);
-        }
+        explicit holder(std::ptrdiff_t n) : held<T[]>(n) {}
 
     public:
-        // called in destructor of object when delete, must be public
-        void operator delete(void* ptr)
-        {
-            ::operator delete(ptr, std::align_val_t{alignof(holder)});
-        }
-
-        auto value() noexcept -> T(&)[]
-        {
-            return reinterpret_cast<T(&)[]>(v);
-        }
-
-        std::ptrdiff_t length() const noexcept
-        {
-            return n;
-        }
-
         [[nodiscard]] static auto create(std::ptrdiff_t n)
         {
             if(n < 1) throw std::bad_array_new_length();
@@ -180,23 +204,6 @@ protected:
     {
         [[nodiscard]] type_index type() const noexcept override { return type_id<R(Args...)>(); }
 
-        template<typename F>
-        class fn : public held<F>
-        {
-        public:
-            std::remove_pointer_t<F>& value() noexcept
-            {
-                if constexpr (std::is_pointer_v<F>) return *held<F>::value();
-                else return held<F>::value();
-            }
-
-            template<typename... A>
-            explicit fn(std::false_type, A&&... a) : held<F>(0, std::forward<A>(a)...) {}
-
-            template<typename T, typename... A>
-            explicit fn(std::true_type, T&&, A&&... a) : fn(std::false_type{}, std::forward<A>(a)...) {}
-        };
-
     public:
         virtual R call(Args... args) = 0;
 
@@ -205,23 +212,32 @@ protected:
                  typename = std::enable_if_t<std::is_invocable_r_v<R, F, Args...>>>
         [[nodiscard]] static auto create(T&& t, A&&... a)
         {
-            class impl : public holder, public fn<F>
-            {
-                using base = fn<F>;
-
-                R call(Args... args) override
-                {
-                    return static_cast<R>(base::value()(std::forward<Args>(args)...));
-                }
-
-                [[noreturn]] void throws() override { throw std::addressof(base::value()); }
-
-            public:
-                explicit impl(T&& t, A&&... a) : base(is_in_place_type<D>{}, std::forward<T>(t), std::forward<A>(a)...) {}
-            };
-
-            return new impl(std::forward<T>(t), std::forward<A>(a)...);
+            return new holder<F, R(Args...)>(is_in_place_type<D>{}, std::forward<T>(t), std::forward<A>(a)...);
         }
+    };
+
+    template<typename F, typename R, typename... Args>
+    class holder<F, R(Args...)> : public holder<R(Args...)>, public held<F>
+    {
+        R call(Args... args) override
+        {
+            return static_cast<R>(value()(std::forward<Args>(args)...));
+        }
+
+        [[noreturn]] void throws() override { throw std::addressof(value()); }
+
+    public:
+        std::remove_pointer_t<F>& value() noexcept
+        {
+            if constexpr (std::is_pointer_v<F>) return *held<F>::value();
+            else return held<F>::value();
+        }
+
+        template<typename... A>
+        explicit holder(std::false_type, A&&... a) : held<F>(0, std::forward<A>(a)...) {}
+
+        template<typename T, typename... A>
+        explicit holder(std::true_type, T&&, A&&... a) : holder(std::false_type{}, std::forward<A>(a)...) {}
     };
 
 public:
