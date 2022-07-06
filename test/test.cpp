@@ -486,3 +486,25 @@ TEST_CASE("atomic")
 
     CHECK(object_cast<tracker>(atomic).id() == 4);
 }
+
+TEST_CASE("from")
+{
+    struct resource : tracker
+    {
+        object::ptr<resource> shared_from_this() const
+        {
+            return object::ptr<resource>::from(this);
+        }
+    };
+
+    {
+        object o;
+        auto& r = o.emplace<resource>();
+        CHECK(tracker::count == 1);
+
+        auto p = r.shared_from_this();
+        CHECK(p == o);
+    }
+
+    CHECK(tracker::count == 0);
+}

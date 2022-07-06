@@ -333,6 +333,23 @@ public:
         : p(holder<rmcvr<ValueType>>::create(std::forward<Args>(args)...)) {}
 
 public:
+    static object from(placeholder* p) noexcept
+    {
+        p->addref();
+        return object(p);
+    }
+
+    template<typename T, typename... Ts>
+    static std::enable_if_t<!std::is_base_of_v<placeholder, T>, holder<T, Ts...>*> from(const T* p) noexcept
+    {
+        auto h = static_cast<holder<T, Ts...>*>(nullptr);
+        h = reinterpret_cast<holder<T, Ts...>*>(
+            reinterpret_cast<unsigned char*>(const_cast<T*>(p)) -
+            reinterpret_cast<std::ptrdiff_t>(std::addressof(h->value())));
+        return h;
+    }
+
+public:
     template<typename ValueType>
     friend ValueType* unsafe_object_cast(object* obj) noexcept;
 
@@ -686,6 +703,8 @@ template<typename T>
 class object::ptr : public object
 {
 public:
+    ptr() = default;
+
     ptr(const object& obj)
     {
         if (obj && obj.type() != type_id<T>()) throw bad_object_cast{};
@@ -729,6 +748,13 @@ public:
     [[nodiscard]] const T& operator*() const
     {
         return *operator->();
+    }
+
+    static ptr from(const T* p) noexcept
+    {
+        ptr r;
+        if (p) object::from(object::from(p)).swap(r);
+        return r;
     }
 };
 
@@ -814,6 +840,13 @@ public:
         return *this;
     }
 #endif
+
+    static ref from(const T& t) noexcept
+    {
+        ref r;
+        object::from(object::from(std::addressof(t))).swap(r);
+        return r;
+    }
 };
 
 template<typename T>
