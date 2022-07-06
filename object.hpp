@@ -173,6 +173,7 @@ protected:
 
         [[noreturn]] void throws() final { throw std::addressof(this->value()); }
 
+    protected:
         template<typename... Args>
         explicit holder(Args&&... args) : held<T>(0, std::forward<Args>(args)...) {}
 
@@ -240,6 +241,26 @@ protected:
         explicit holder(std::true_type, T&&, A&&... a) : holder(std::false_type{}, std::forward<A>(a)...) {}
     };
 
+    template<typename T, typename U>
+    class holder<T, U[]> : public holder<T>, public held<U[]>
+    {
+        template<typename... Args>
+        explicit holder(std::ptrdiff_t n, Args&&... args)
+            : holder<T>(std::forward<Args>(args)...), held<U[]>(n) {}
+
+    public:
+        using holder<T>::value;
+
+        decltype(auto) array() noexcept { return held<U[]>::value(); }
+
+        template<typename... Args>
+        [[nodiscard]] static auto create(std::ptrdiff_t n, Args&&... args)
+        {
+            if(n < 1) throw std::bad_array_new_length();
+            return new(n) holder(n, std::forward<Args>(args)...);
+        }
+    };
+
 public:
     class atomic;
 
@@ -254,6 +275,9 @@ public:
 
     template<typename T>
     class vec;
+
+    template<typename T, typename U>
+    class fam;
 
     using handle = placeholder*;
 
@@ -1007,6 +1031,75 @@ public:
     const T* end() const noexcept
     {
         return const_cast<vec*>(this)->end();
+    }
+};
+
+template<typename T, typename U>
+class object::fam : public ptr<T>         // flexible array member
+{
+public:
+    fam() = default;
+
+    template<typename... Args>
+    explicit fam(std::size_t n, Args&&... args)
+    {
+        this->p = holder<T, U[]>::create(n, std::forward<Args>(args)...);
+    }
+
+    fam(const object& obj)
+    {
+        if (obj && !dynamic_cast<holder<T, U[]>*>(obj.p)) throw bad_object_cast{};
+        object::operator=(obj);
+    }
+
+    fam(object&& obj)
+    {
+        if (obj && !dynamic_cast<holder<T, U[]>*>(obj.p)) throw bad_object_cast{};
+        object::swap(obj);
+    }
+
+    void swap(fam& f) noexcept
+    {
+        return object::swap(f);
+    }
+
+    template<typename... Args>
+    T& emplace(std::size_t n, Args&&... args)
+    {
+        auto q = holder<T, U[]>::create(n, std::forward<Args>(args)...);
+        object((handle)q).swap(*this);
+        return q->value();
+    }
+
+    vec<U&> array() noexcept
+    {
+        if (auto h = static_cast<holder<T, U[]>*>(p))
+            return { h->array(), static_cast<std::size_t>(h->length()) };
+        return {};
+    }
+
+    vec<const U&> array() const noexcept
+    {
+        return const_cast<fam*>(this)->array();
+    }
+
+    static vec<U&> array(T* p) noexcept
+    {
+        if (!p) return {};
+        auto h = object::from<T, U[]>(p);
+        return { h->array(), static_cast<std::size_t>(h->length()) };
+    }
+
+    static vec<const U&> array(const T* p) noexcept
+    {
+        return array(const_cast<T*>(p));
+    }
+
+    static fam from(const T* p) noexcept
+    {
+        fam r;
+        ptr<T>::from(p).swap(r);
+        return r;
     }
 };
 

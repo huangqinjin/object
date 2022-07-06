@@ -508,3 +508,32 @@ TEST_CASE("from")
 
     CHECK(tracker::count == 0);
 }
+
+TEST_CASE("fam")
+{
+    struct resource : tracker
+    {
+        object::vec<tracker&> trackers()
+        {
+            return object::fam<resource, tracker>::array(this);
+        }
+
+        static object::ptr<resource> create(std::size_t n)
+        {
+            object::fam<resource, tracker> obj;
+            obj.emplace(n);
+            return obj;
+        }
+    };
+
+    int id = tracker::seq = 0;
+    auto p = resource::create(3);
+    CHECK(tracker::count == 4);
+    CHECK(p->id() == ++id);
+
+    for (auto& t : p->trackers())
+        CHECK(t.id() == ++id);
+
+    p = {};
+    CHECK(tracker::count == 0);
+}
