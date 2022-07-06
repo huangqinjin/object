@@ -4,6 +4,7 @@
 #include "object.hpp"
 
 #include <thread>
+#include <future>
 
 namespace
 {
@@ -488,6 +489,37 @@ TEST_CASE("atomic")
     CHECK(obj.type() == object::type_id<tracker>());
     CHECK(object_cast<tracker>(obj).id() == 4);
 }
+
+#if defined(__cpp_lib_atomic_wait)
+TEST_CASE("condition variable")
+{
+    object::atomic cvm;
+    bool shutdown = false;
+
+    std::promise<void> p;
+    auto f = p.get_future();
+    std::thread t([&] {
+        std::lock_guard _(cvm);
+        CHECK(shutdown == false);
+        p.set_value();
+        cvm.wait([&] { return shutdown; });
+        CHECK(shutdown == true);
+        shutdown = false;
+    });
+    f.wait();
+
+#define synchronized(m) if (auto _ = std::unique_lock(m))
+
+    synchronized(cvm) {
+        shutdown = true;
+        cvm.notify_one();
+        CHECK(shutdown == true);
+    }
+
+    t.join();
+    CHECK(shutdown == false);
+}
+#endif
 
 TEST_CASE("from")
 {

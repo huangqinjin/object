@@ -9,6 +9,7 @@
 #define OBJECT_HPP
 
 #include <type_traits>
+#include <cassert>
 #include <atomic>
 #include <utility>        // move, exchange, in_place_type_t
 #include <memory>         // uninitialized_value_construct_n, destroy_n
@@ -431,6 +432,7 @@ class object::atomic
         mask = 3,
         locked = 1,
         waiting = 2,
+        condition = 3,
     };
 
     mutable std::atomic<storage_t> storage;
@@ -443,9 +445,10 @@ class object::atomic
         while (true) switch (v & mask)
         {
             case 0: // try to lock
-                if (storage.compare_exchange_weak(v, v | locked,
+            case condition: // cv wait
+                if (storage.compare_exchange_weak(v, (v & ~mask) | locked,
                     std::memory_order_acquire, std::memory_order_relaxed))
-                    return reinterpret_cast<handle>(v);
+                    return reinterpret_cast<handle>(v & ~mask);
                 break;
             case locked: // try to wait
                 if (!storage.compare_exchange_weak(v, (v & ~mask) | waiting,
@@ -595,8 +598,9 @@ public:
     //////////////////
     bool try_lock() noexcept
     {
-        auto v = storage.load(std::memory_order_relaxed) & ~mask;
-        return storage.compare_exchange_weak(v, v | locked,
+        auto v = storage.load(std::memory_order_relaxed);
+        if ((v & mask) != 0 && (v & mask) != condition) return false;
+        return storage.compare_exchange_weak(v, (v & ~mask) | locked,
                std::memory_order_acquire, std::memory_order_relaxed);
     }
 
@@ -610,6 +614,45 @@ public:
         auto v = storage.load(std::memory_order_relaxed) & ~mask;
         store_and_unlock(reinterpret_cast<handle>(v), std::memory_order_release);
     }
+
+#if defined(__cpp_lib_atomic_wait)
+    /**
+     * @brief Unlike std::condition_variable, @p lock() must be held while calling @p notify_*().
+     *
+     * @code
+     * //////////////////
+     * //// Thread A ////
+     * //////////////////
+     * obj.lock();
+     * while (condition is false)
+     *     obj.wait();
+     * // Perform action appropriate to condition
+     * obj.unlock();
+     *
+     * //////////////////
+     * //// Thread B ////
+     * //////////////////
+     * obj.lock();
+     * // Set condition to true
+     * obj.notify_one();
+     * obj.unlock();
+     * @endcode
+     */
+    void wait() noexcept
+    {
+        auto v = storage.load(std::memory_order_relaxed);
+        assert((v & mask) != 0 && (v & mask) != condition && "wait() is called while lock() is not held!");
+        store_and_unlock(reinterpret_cast<handle>((v & ~mask) | condition), std::memory_order_release);
+        storage.wait((v & ~mask) | condition, std::memory_order_relaxed);
+        (void)lock_and_load(std::memory_order_relaxed);
+    }
+
+    template<typename Predicate>
+    void wait(Predicate stop_waiting) noexcept(std::is_nothrow_invocable_v<Predicate>)
+    {
+        while (!stop_waiting()) wait();
+    }
+#endif
 
     object get() const noexcept
     {
