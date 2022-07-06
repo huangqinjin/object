@@ -571,3 +571,36 @@ TEST_CASE("fam")
     p = {};
     CHECK(tracker::count == 0);
 }
+
+TEST_CASE("str")
+{
+    SECTION("std::string")
+    {
+        object::ls s = std::string("1111");
+        CHECK(s.size() == 4);
+        CHECK(std::distance(s.begin(), s.end()) == s.size());
+        for (auto c : s) CHECK(c == '1');
+
+        CHECK(object(s).type() == object::type_id<char[]>());
+    }
+
+    SECTION("std::string_view")
+    {
+        object::ws s = std::wstring_view(L"1111");
+        CHECK(s.size() == 4);
+        CHECK(std::distance(s.begin(), s.end()) == s.size());
+        for (auto c : s) CHECK(c == L'1');
+
+        CHECK(object(s).type() == object::type_id<wchar_t[]>());
+    }
+
+    SECTION("C string")
+    {
+        object::u16s s = u"1111";
+        CHECK(s.size() == 4);
+        CHECK(std::distance(s.begin(), s.end()) == s.size());
+        for (auto c : s) CHECK(c == u'1');
+
+        CHECK(object(s).type() == object::type_id<char16_t[]>());
+    }
+}

@@ -15,7 +15,9 @@
 #include <memory>         // uninitialized_value_construct_n, destroy_n
 #include <new>            // operator new, operator delete, align_val_t, bad_array_new_length
 #include <stdexcept>      // out_of_range
-#include <algorithm>      // copy
+#include <algorithm>      // copy_n, fill_n
+#include <string>
+#include <string_view>
 
 class bad_object_cast : public std::exception {};
 class object_not_fn : public bad_object_cast {};
@@ -279,6 +281,17 @@ public:
 
     template<typename T, typename U>
     class fam;
+
+    template<typename CharT>
+    class str;
+
+    using ls = str<char>;
+    using ws = str<wchar_t>;
+    using u16s = str<char16_t>;
+    using u32s = str<char32_t>;
+#ifdef __cpp_char8_t
+    using u8s = str<char8_t>;
+#endif
 
     using handle = placeholder*;
 
@@ -970,10 +983,17 @@ public:
         object::swap(obj);
     }
 
-    vec(std::initializer_list<T> list)
+    template<typename InputIt, typename Size>
+    vec(InputIt first, Size count)
     {
-        if (list.size() == 0) return;
-        std::copy(list.begin(), list.end(), object::emplace<T[]>(list.size()));
+        if (count > 0)
+        {
+            std::copy_n(first, count, object::emplace<T[]>(count));
+        }
+    }
+
+    vec(std::initializer_list<T> list) : vec(list.begin(), list.size())
+    {
     }
 
     void swap(vec& v) noexcept
@@ -1043,6 +1063,26 @@ public:
     const T& at(std::size_t i) const
     {
         return const_cast<vec*>(this)->at(i);
+    }
+
+    T& front() noexcept
+    {
+        return *data();
+    }
+
+    T& back() noexcept
+    {
+        return *(data() + size() - 1);
+    }
+
+    const T& front() const noexcept
+    {
+        return *data();
+    }
+
+    const T& back() const noexcept
+    {
+        return *(data() + size() - 1);
     }
 
     T* begin() noexcept
@@ -1136,6 +1176,141 @@ public:
         fam r;
         ptr<T>::from(p).swap(r);
         return r;
+    }
+};
+
+template<typename CharT>
+class object::str         // ATL::CStringT
+{
+    CharT* p;
+
+    holder<CharT[]>* storage() const noexcept
+    {
+        return object::from<CharT[]>(reinterpret_cast<CharT(*)[]>(p));
+    }
+
+public:
+    vec<CharT> object() const noexcept
+    {
+        vec<CharT> v;
+        if (p) (v.p = storage())->addref();
+        return v;
+    }
+
+    str(const class object& obj) : p(nullptr)
+    {
+        vec<CharT> v(obj);
+        if (!v.empty() && v.back() != CharT{})
+            throw bad_object_cast{};
+        p = v.data();
+        (void)v.release();
+    }
+
+    str(class object&& obj)
+    {
+        vec<CharT> v(std::move(obj));
+        if (!v.empty() && v.back() != CharT{})
+        {
+            obj.swap(v);
+            throw bad_object_cast{};
+        }
+        p = v.data();
+        (void)v.release();
+    }
+
+    str() noexcept : p(nullptr) {}
+    str(std::nullptr_t) noexcept : str() {}
+    str(str&& s) noexcept : p(s.p) { s.p = nullptr; }
+    str(const str& s) noexcept : p(s.p) { (void)object().release(); }
+    ~str() { if (p) (void)(class object)((handle)storage()); }
+    void swap(str& s) noexcept { std::swap(p, s.p); }
+
+    str& operator=(std::nullptr_t) noexcept { str().swap(*this); return *this; }
+    str& operator=(const str& s) noexcept { if (p != s.p) str(s).swap(*this); return *this; }
+    str& operator=(str&& s) noexcept { if (p != s.p) str(std::move(s)).swap(s); return *this; }
+
+    bool operator==(const str& s) const noexcept { return p == s.p; }
+    bool operator!=(const str& s) const noexcept { return p != s.p; }
+    bool operator< (const str& s) const noexcept { return p <  s.p; }
+    bool operator> (const str& s) const noexcept { return p >  s.p; }
+    bool operator<=(const str& s) const noexcept { return p <= s.p; }
+    bool operator>=(const str& s) const noexcept { return p >= s.p; }
+
+    [[nodiscard]] operator class object() const noexcept { return object(); }
+    [[nodiscard]] operator const CharT*() const noexcept { return p; }
+    [[nodiscard]] operator CharT*() noexcept { return p; }
+
+    explicit operator bool() const noexcept { return p != nullptr; }
+    std::size_t size() const noexcept { return p ? storage()->length() - 1 : 0; }
+    std::size_t length() const noexcept { return size(); }
+    bool empty() const noexcept { return size() == 0; }
+    const CharT* data() const noexcept { return p; }
+    CharT* data() noexcept { return p; }
+    CharT* begin() noexcept { return data(); }
+    CharT* end() noexcept { return data() + size(); }
+    CharT* begin() const noexcept { return data(); }
+    CharT* end() const noexcept { return data() + size(); }
+
+    const CharT* c_str() const noexcept
+    {
+        static const CharT null{};
+        return p ? p : std::addressof(null);
+    }
+
+    str(std::size_t count, CharT ch)
+    {
+        vec<CharT> v(count + 1);
+        std::fill_n(v.data(), count, ch);
+        v.back() = CharT{};
+        p = v.data();
+        (void)v.release();
+    }
+
+    template<typename Traits>
+    str(std::basic_string_view<CharT, Traits> s) : p(nullptr)
+    {
+        vec<CharT> v(s.size() + 1);
+        std::copy_n(s.data(), s.size(), v.data());
+        v.back() = CharT{};
+        p = v.data();
+        (void)v.release();
+    }
+
+    template<typename Traits>
+    str(const std::basic_string<CharT, Traits>& s)
+        : str(std::basic_string_view<CharT, Traits>(s))
+    {
+    }
+
+    str(const CharT* s) : str(std::basic_string_view<CharT>(s))
+    {
+    }
+
+    template<typename Traits>
+    str& operator=(std::basic_string_view<CharT, Traits> s)
+    {
+        str(s).swap(*this);
+        return *this;
+    }
+
+    template<typename Traits>
+    str& operator=(const std::basic_string<CharT, Traits>& s)
+    {
+        str(s).swap(*this);
+        return *this;
+    }
+
+    str& operator=(const CharT* s)
+    {
+        str(s).swap(*this);
+        return *this;
+    }
+
+    template<typename Traits>
+    [[nodiscard]] operator std::basic_string_view<CharT, Traits>() const noexcept
+    {
+        if (p) return { data(), size() };
+        else return {};
     }
 };
 
