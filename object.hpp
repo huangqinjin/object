@@ -12,10 +12,10 @@
 #include <cassert>
 #include <atomic>
 #include <utility>        // move, exchange, in_place_type_t
-#include <memory>         // uninitialized_value_construct_n, destroy_n
-#include <new>            // operator new, operator delete, align_val_t, bad_array_new_length
+#include <memory>         // uninitialized_value_construct_n
+#include <new>            // operator new, operator delete, align_val_t, bad_array_new_length, launder
 #include <stdexcept>      // out_of_range
-#include <algorithm>      // copy_n, fill_n
+#include <algorithm>      // copy_n, fill_n, max
 #include <string>
 #include <string_view>
 
@@ -39,6 +39,20 @@ public:
     [[nodiscard]] static type_index null_t() noexcept
     {
         return type_id<void>();
+    }
+
+    template<typename T>
+    static void destroy_at(T* p) noexcept(std::is_nothrow_destructible_v<T>)
+    {
+        // C++20 destroy_at calls the destructors of array in order.
+        // But raw array destructor is in reverse order.
+        if constexpr (std::is_trivially_destructible_v<T>)
+            return;
+        else if constexpr (std::is_array_v<T>)
+            for (std::size_t i = std::extent_v<T>; i > 0; --i)
+                destroy_at(std::addressof((*p)[i - 1]));
+        else
+            p->~T();
     }
 
 protected:
@@ -96,30 +110,31 @@ protected:
     };
 
     template<typename T>
-    class held<T[]>
+    class alignas((std::max)(alignof(std::ptrdiff_t), alignof(T))) held<T[]>
     {
         const std::ptrdiff_t n;
-        T v[1];
 
     public:
-        explicit held(std::ptrdiff_t n) : n(n), v{}
+        explicit held(std::ptrdiff_t n) : n(n)
         {
-            std::uninitialized_value_construct_n(v + 1, n - 1);
+            std::uninitialized_value_construct_n(value(), n);
         }
 
         ~held()
         {
-            std::destroy_n(v + 1, n - 1);
+            if constexpr (!std::is_trivially_destructible_v<T>)
+                for (T * const q = value(), *p = q + n; p != q; )
+                    object::destroy_at(std::addressof(*--p));
         }
 
         void* operator new(std::size_t sz, std::ptrdiff_t n)
         {
-            return ::operator new(sz + (n - 1) * sizeof(T));
+            return ::operator new(sz + n * sizeof(T));
         }
 
         void* operator new(std::size_t sz, std::align_val_t al, std::ptrdiff_t n)
         {
-            return ::operator new(sz + (n - 1) * sizeof(T), al);
+            return ::operator new(sz + n * sizeof(T), al);
         }
 
         // called in create() if the constructor throws an exception, could be private
@@ -148,7 +163,7 @@ protected:
 
         auto value() noexcept -> T(&)[]
         {
-            return reinterpret_cast<T(&)[]>(v);
+            return *std::launder(reinterpret_cast<T(*)[]>(this + 1));
         }
 
         std::ptrdiff_t length() const noexcept
@@ -189,7 +204,7 @@ protected:
     };
 
     template<typename T>
-    class holder<T[]> : public placeholder, public held<T[]>
+    class holder<T[]> final : public placeholder, public held<T[]>
     {
         [[nodiscard]] type_index type() const noexcept final { return type_id<T[]>(); }
 
@@ -198,7 +213,7 @@ protected:
     public:
         [[nodiscard]] static auto create(std::ptrdiff_t n)
         {
-            if(n < 1) throw std::bad_array_new_length();
+            if(n < 0) throw std::bad_array_new_length();
             return new(n) holder(n);
         }
     };
@@ -245,7 +260,7 @@ protected:
     };
 
     template<typename T, typename U>
-    class holder<T, U[]> : public holder<T>, public held<U[]>
+    class holder<T, U[]> final : public holder<T>, public held<U[]>
     {
         template<typename... Args>
         explicit holder(std::ptrdiff_t n, Args&&... args)
@@ -259,7 +274,7 @@ protected:
         template<typename... Args>
         [[nodiscard]] static auto create(std::ptrdiff_t n, Args&&... args)
         {
-            if(n < 1) throw std::bad_array_new_length();
+            if(n < 0) throw std::bad_array_new_length();
             return new(n) holder(n, std::forward<Args>(args)...);
         }
     };

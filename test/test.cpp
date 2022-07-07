@@ -604,3 +604,31 @@ TEST_CASE("str")
         CHECK(object(s).type() == object::type_id<char16_t[]>());
     }
 }
+
+TEST_CASE("vec destruct order and alignment")
+{
+    struct alignas(__STDCPP_DEFAULT_NEW_ALIGNMENT__ * 2) tracker2 : tracker
+    {
+        tracker2()
+        {
+            CHECK((std::uintptr_t)this % alignof(tracker2) == 0);
+            CHECK(s == count);
+        }
+
+        ~tracker2()
+        {
+            CHECK(s == count);
+        }
+    };
+
+    tracker::seq = 0;
+    tracker::count = 0;
+
+    object::vec<tracker2> v(3);
+    CHECK(tracker::seq == 3);
+    CHECK(tracker::count == 3);
+
+    v = {};
+    CHECK(tracker::seq == 3);
+    CHECK(tracker::count == 0);
+}
