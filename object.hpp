@@ -115,15 +115,15 @@ protected:
         const std::ptrdiff_t n;
 
     public:
-        explicit held(std::ptrdiff_t n) : n(n)
+        explicit held(std::ptrdiff_t n, void* this1) : n(n)
         {
-            std::uninitialized_value_construct_n(value(), n);
+            std::uninitialized_value_construct_n(value(this1), n);
         }
 
-        ~held()
+        void destruct(void* this1)
         {
             if constexpr (!std::is_trivially_destructible_v<T>)
-                for (T * const q = value(), *p = q + n; p != q; )
+                for (T * const q = value(this1), *p = q + n; p != q; )
                     object::destroy_at(std::addressof(*--p));
         }
 
@@ -161,9 +161,9 @@ protected:
             return ::operator delete(ptr, al);
         }
 
-        auto value() noexcept -> T(&)[]
+        auto value(void* this1 /*= this + 1*/) noexcept -> T(&)[]
         {
-            return *std::launder(reinterpret_cast<T(*)[]>(this + 1));
+            return *std::launder(reinterpret_cast<T(*)[]>(this1));
         }
 
         std::ptrdiff_t length() const noexcept
@@ -208,9 +208,16 @@ protected:
     {
         [[nodiscard]] type_index type() const noexcept final { return type_id<T[]>(); }
 
-        explicit holder(std::ptrdiff_t n) : held<T[]>(n) {}
+        ~holder() override
+        {
+            held<T[]>::destruct(this + 1);
+        }
+
+        explicit holder(std::ptrdiff_t n) : held<T[]>(n, this + 1) {}
 
     public:
+        decltype(auto) value() noexcept { return held<T[]>::value(this + 1); }
+
         [[nodiscard]] static auto create(std::ptrdiff_t n)
         {
             if(n < 0) throw std::bad_array_new_length();
@@ -262,14 +269,19 @@ protected:
     template<typename T, typename U>
     class holder<T, U[]> final : public holder<T>, public held<U[]>
     {
+        ~holder() override
+        {
+            held<U[]>::destruct(this + 1);
+        }
+
         template<typename... Args>
         explicit holder(std::ptrdiff_t n, Args&&... args)
-            : holder<T>(std::forward<Args>(args)...), held<U[]>(n) {}
+            : holder<T>(std::forward<Args>(args)...), held<U[]>(n, this + 1) {}
 
     public:
         using holder<T>::value;
 
-        decltype(auto) array() noexcept { return held<U[]>::value(); }
+        decltype(auto) array() noexcept { return held<U[]>::value(this + 1); }
 
         template<typename... Args>
         [[nodiscard]] static auto create(std::ptrdiff_t n, Args&&... args)
