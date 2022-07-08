@@ -77,7 +77,7 @@ protected:
     template<typename T>
     class held
     {
-        T t;
+        union { T t; };
 
         template<std::size_t I, std::size_t N, typename U>
         static U& get(U(&a)[N]) { return a[I]; }
@@ -86,27 +86,58 @@ protected:
         static U&& get(U(&&a)[N]) { return static_cast<U&&>(a[I]); }
 
         template<typename... Args>
-        held(std::true_type, Args&&... args) : t(std::forward<Args>(args)...) {}
+        void init(std::true_type, Args&&... args)
+        {
+            (void) new((void*)std::addressof(t)) T(std::forward<Args>(args)...);
+        }
 
         template<typename... Args>
-        held(std::false_type, Args&&... args) : t{std::forward<Args>(args)...} {}
+        void init(std::false_type, Args&&... args)
+        {
+            (void) new((void*)std::addressof(t)) T{std::forward<Args>(args)...};
+        }
 
         template<typename A, std::size_t... I>
-        held(std::index_sequence<I...>, A&& a) : t{get<I>(static_cast<A&&>(a))...} {}
-
-    public:
-        using type = T;
-
-        T& value() noexcept { return t; }
+        void init(std::index_sequence<I...>, A&& a)
+        {
+            (void) new((void*)std::addressof(t)) T{get<I>(static_cast<A&&>(a))...};
+        }
 
         template<typename... Args, typename U = rmcvr<typename is_args_one<Args...>::type>,
                  typename = std::enable_if_t<std::is_array_v<T> && std::is_same_v<T, U>>>
-        held(int&&, Args&&... args)
-            : held(std::make_index_sequence<std::extent_v<U>>{}, std::forward<Args>(args)...) {}
+        void init(int&&, Args&&... args)
+        {
+            return init(std::make_index_sequence<std::extent_v<U>>{}, std::forward<Args>(args)...);
+        }
 
         template<typename... Args>
-        held(const int&, Args&&... args)
-            : held(std::is_constructible<T, Args&&...>{}, std::forward<Args>(args)...) {}
+        void init(const int&, Args&&... args)
+        {
+            return init(std::is_constructible<T, Args&&...>{}, std::forward<Args>(args)...);
+        }
+
+    public:
+        T& value() noexcept { return t; }
+
+        template<typename... Args>
+        void construct(Args&&... args)
+        {
+            init(0, std::forward<Args>(args)...);
+        }
+
+        void destruct()
+        {
+            object::destroy_at(std::addressof(value()));
+        }
+
+        held() noexcept {}
+        ~held() noexcept {}
+
+        template<typename... Args>
+        explicit held(bool init, Args&&... args)
+        {
+            if (init) construct(std::forward<Args>(args)...);
+        }
     };
 
     template<typename T>
@@ -182,6 +213,11 @@ protected:
         virtual ~placeholder() = default;
         [[nodiscard]] virtual type_index type() const noexcept = 0;
         [[noreturn]] virtual void throws() { throw nullptr; }
+
+        virtual void destroy() noexcept /* = 0 */
+        {
+            delete this;
+        }
     } *p;
 
     template<typename T, typename ...>
@@ -191,15 +227,34 @@ protected:
 
         [[noreturn]] void throws() final { throw std::addressof(this->value()); }
 
+        void destroy() noexcept override
+        {
+            destruct();
+            placeholder::destroy();
+        }
+
     protected:
         template<typename... Args>
-        explicit holder(Args&&... args) : held<T>(0, std::forward<Args>(args)...) {}
+        void construct(Args&&... args)
+        {
+            held<T>::construct(std::forward<Args>(args)...);
+        }
+
+        void destruct()
+        {
+            held<T>::destruct();
+        }
+
+        holder() = default;
+
+        template<typename... Args>
+        explicit holder(bool, Args&&... args) : held<T>(true, std::forward<Args>(args)...) {}
 
     public:
         template<typename... Args>
         [[nodiscard]] static auto create(Args&&... args)
         {
-            return new holder(std::forward<Args>(args)...);
+            return new holder(true, std::forward<Args>(args)...);
         }
     };
 
@@ -208,9 +263,10 @@ protected:
     {
         [[nodiscard]] type_index type() const noexcept final { return type_id<T[]>(); }
 
-        ~holder() override
+        void destroy() noexcept override
         {
             held<T[]>::destruct(this + 1);
+            placeholder::destroy();
         }
 
         explicit holder(std::ptrdiff_t n) : held<T[]>(n, this + 1) {}
@@ -252,6 +308,12 @@ protected:
 
         [[noreturn]] void throws() override { throw std::addressof(value()); }
 
+        void destroy() noexcept override
+        {
+            held<F>::destruct();
+            placeholder::destroy();
+        }
+
     public:
         std::remove_pointer_t<F>& value() noexcept
         {
@@ -260,7 +322,7 @@ protected:
         }
 
         template<typename... A>
-        explicit holder(std::false_type, A&&... a) : held<F>(0, std::forward<A>(a)...) {}
+        explicit holder(std::false_type, A&&... a) : held<F>(true, std::forward<A>(a)...) {}
 
         template<typename T, typename... A>
         explicit holder(std::true_type, T&&, A&&... a) : holder(std::false_type{}, std::forward<A>(a)...) {}
@@ -269,14 +331,18 @@ protected:
     template<typename T, typename U>
     class holder<T, U[]> final : public holder<T>, public held<U[]>
     {
-        ~holder() override
+        void destroy() noexcept override
         {
+            holder<T>::destruct();
             held<U[]>::destruct(this + 1);
+            placeholder::destroy();
         }
 
         template<typename... Args>
-        explicit holder(std::ptrdiff_t n, Args&&... args)
-            : holder<T>(std::forward<Args>(args)...), held<U[]>(n, this + 1) {}
+        explicit holder(std::ptrdiff_t n, Args&&... args) : held<U[]>(n, this + 1)
+        {
+            holder<T>::construct(std::forward<Args>(args)...);
+        }
 
     public:
         using holder<T>::value;
@@ -339,7 +405,7 @@ public:
     ~object() noexcept
     {
         if(p && p->release() == 0)
-            delete p;
+            p->destroy();
     }
 
     object& operator=(const object& obj) noexcept

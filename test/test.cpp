@@ -545,30 +545,71 @@ TEST_CASE("from")
 
 TEST_CASE("fam")
 {
-    struct resource : tracker
+    struct tracker2 : tracker
     {
-        object::vec<tracker&> trackers()
+        tracker2() : tracker(13, 14)
         {
-            return object::fam<resource, tracker>::array(this);
+            CHECK(s == count);
+        }
+
+        ~tracker2()
+        {
+            CHECK(s == count);
+        }
+    };
+
+    struct alignas(__STDCPP_DEFAULT_NEW_ALIGNMENT__ * 2) resource : tracker2
+    {
+        void check()
+        {
+            CHECK((std::uintptr_t)this % alignof(resource) == 0);
+
+            int id = 0;
+            for (auto& t : trackers())
+            {
+                CHECK(t.i == 13);
+                CHECK(t.j == 14);
+                CHECK(t.s == ++id);
+            }
+
+            CHECK(i == 13);
+            CHECK(j == 14);
+            CHECK(s == ++id);
+            CHECK(tracker::count == s);
+        }
+
+        resource()
+        {
+            check();
+        }
+
+        ~resource()
+        {
+            check();
+        }
+
+        object::vec<tracker2&> trackers()
+        {
+            return object::fam<resource, tracker2>::array(this);
         }
 
         static object::ptr<resource> create(std::size_t n)
         {
-            object::fam<resource, tracker> obj;
+            object::fam<resource, tracker2> obj;
             obj.emplace(n);
             return obj;
         }
     };
 
-    int id = tracker::seq = 0;
-    auto p = resource::create(3);
-    CHECK(tracker::count == 4);
-    CHECK(p->id() == ++id);
+    tracker::seq = 0;
+    tracker::count = 0;
 
-    for (auto& t : p->trackers())
-        CHECK(t.id() == ++id);
+    auto p = resource::create(3);
+    CHECK(tracker::seq == 4);
+    CHECK(tracker::count == 4);
 
     p = {};
+    CHECK(tracker::seq == 4);
     CHECK(tracker::count == 0);
 }
 
