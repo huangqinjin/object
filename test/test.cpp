@@ -690,3 +690,23 @@ TEST_CASE("aliasing constructor")
     CHECK_NOTHROW((object::ref<tracker>(obj, nullptr)));
     CHECK_THROWS_AS((object::ref<tracker>(obj)), bad_object_cast);
 }
+
+TEST_CASE("weak")
+{
+    tracker::count = 0;
+    object obj = tracker();
+    object::weak wp = obj;
+    CHECK(tracker::count == 1);
+
+    CHECK(!!obj);
+    CHECK(wp.expired() == false);
+    CHECK(wp.lock() == obj);
+    CHECK_NOTHROW((object)wp);
+
+    obj = {};
+    CHECK(tracker::count == 0);
+
+    CHECK(wp.expired() == true);
+    CHECK(!wp.lock());
+    CHECK_THROWS_AS((object)wp, bad_weak_object);
+}

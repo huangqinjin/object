@@ -21,6 +21,7 @@
 
 class bad_object_cast : public std::exception {};
 class object_not_fn : public bad_object_cast {};
+class bad_weak_object : public std::exception {};
 
 class object
 {
@@ -203,19 +204,39 @@ protected:
         }
     };
 
-    class placeholder
+    class refcounted
     {
         std::atomic<long> refcount = 1;
 
     public:
+        long xref(long c = 1) noexcept
+        {
+            long r = refcount.load(std::memory_order_relaxed);
+            while (r != 0 && !refcount.compare_exchange_weak(r, r + c, std::memory_order_relaxed));
+            return r == 0 ? 0 : r + c;
+        }
+
+        long count() const noexcept { return refcount.load(std::memory_order_relaxed); }
         long addref(long c = 1) noexcept { return c + refcount.fetch_add(c, std::memory_order_relaxed); }
         long release(long c = 1) noexcept { return addref(-c); }
+    };
+
+    class weakable
+    {
+    public:
+        refcounted weak;
+    };
+
+    class placeholder : public refcounted, public weakable
+    {
+    public:
         virtual ~placeholder() = default;
         [[nodiscard]] virtual type_index type() const noexcept = 0;
         [[noreturn]] virtual void throws() { throw nullptr; }
 
         virtual void destroy() noexcept /* = 0 */
         {
+            if (weak.release() != 0) return;
             delete this;
         }
     } *p;
@@ -358,6 +379,8 @@ protected:
     };
 
 public:
+    class weak;
+
     class atomic;
 
     template<typename F>
@@ -529,6 +552,57 @@ CAST(object_cast)
 CAST(polymorphic_object_cast)
 #undef CAST
 
+
+class object::weak
+{
+    placeholder* p;
+
+public:
+    weak() noexcept : p(nullptr) {}
+    explicit weak(handle p) noexcept : p(p) {}
+    weak(const object& obj) noexcept : p(obj.p) { if (p) p->weak.addref(); }
+    weak(const weak& w) noexcept : p(w.p) { if (p) p->weak.addref(); }
+    weak(weak&& w) noexcept : p(w.p) { w.p = nullptr; }
+    ~weak() { if (p && p->weak.release() == 0) delete p; }
+    void swap(weak& w) noexcept { std::swap(p, w.p); }
+    weak& operator=(const weak& w) noexcept { if (p != w.p) weak(w).swap(*this); return *this; }
+    weak& operator=(weak&& w) noexcept { if (p != w.p) weak(std::move(w)).swap(*this); return *this; }
+
+    bool operator==(const weak& w) const noexcept { return p == w.p; }
+    bool operator!=(const weak& w) const noexcept { return p != w.p; }
+    bool operator< (const weak& w) const noexcept { return p <  w.p; }
+    bool operator> (const weak& w) const noexcept { return p >  w.p; }
+    bool operator<=(const weak& w) const noexcept { return p <= w.p; }
+    bool operator>=(const weak& w) const noexcept { return p >= w.p; }
+
+    explicit operator bool() const noexcept { return p != nullptr; }
+    bool expired() const noexcept { return !p || p->count() <= 0; }
+    object lock() const noexcept { return object(p && p->xref() ? p : nullptr); }
+
+    [[nodiscard]] operator object() const
+    {
+        object obj = lock();
+        if (!obj) throw bad_weak_object{};
+        return obj;
+    }
+
+    [[nodiscard]] handle release() noexcept
+    {
+        return std::exchange(p, nullptr);
+    }
+
+    static weak from(placeholder* p) noexcept
+    {
+        p->weak.addref();
+        return weak(p);
+    }
+
+    template<typename T, typename... Ts>
+    static std::enable_if_t<!std::is_base_of_v<placeholder, T>, weak> from(const T* p) noexcept
+    {
+        return from(object::from<T, Ts...>(p));
+    }
+};
 
 class object::atomic
 {
