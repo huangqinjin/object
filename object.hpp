@@ -790,42 +790,79 @@ public:
 template<typename T>
 class object::ptr : public object
 {
+    template<typename U>
+    friend class ptr;
+
+    template<typename U>
+    friend class ref;
+
+protected:
+    T* p;
+
 public:
-    ptr() = default;
+    ptr() noexcept : p(nullptr) {}
 
     ptr(const object& obj)
     {
-        if (obj && obj.type() != type_id<T>()) throw bad_object_cast{};
+        p = obj ? std::addressof(const_cast<T&>(object_cast<T>(obj))) : nullptr;
         object::operator=(obj);
     }
 
     ptr(object&& obj)
     {
-        if (obj && obj.type() != type_id<T>()) throw bad_object_cast{};
+        p = obj ? std::addressof(object_cast<T>(obj)) : nullptr;
         object::swap(obj);
     }
 
+    ptr(const object& obj, T* p)
+    {
+        if (p) this->p = p;
+        else if (obj) this->p = std::addressof(const_cast<T&>(polymorphic_object_cast<T>(obj)));
+        else this->p = nullptr;
+        object::operator=(obj);
+    }
+
+    ptr(object&& obj, T* p)
+    {
+        if (p) this->p = p;
+        else if (obj) this->p = std::addressof(polymorphic_object_cast<T>(obj));
+        else this->p = nullptr;
+        object::swap(obj);
+    }
+
+    template<typename U>
+    ptr(const ptr<U>& p) noexcept : object(p), p(p.p) {}
+
+    template<typename U>
+    ptr(ptr<U>&& p) noexcept : object(std::move(p)), p(p.p) {}
+
     void swap(ptr& p) noexcept
     {
+        std::swap(this->p, p.p);
         return object::swap(p);
     }
 
     template<typename... Args>
-    decltype(auto) emplace(Args&&... args)
+    T& emplace(Args&&... args)
     {
-        return object::emplace<T>(std::forward<Args>(args)...);
+        return *(p = std::addressof(object::emplace<T>(std::forward<Args>(args)...)));
+    }
+
+    explicit operator bool() const noexcept
+    {
+        return p != nullptr;
     }
 
     T* operator->()
     {
         if (p == nullptr) throw bad_object_cast{};
-        return unsafe_object_cast<T>(this);
+        return p;
     }
 
     const T* operator->() const
     {
         if (p == nullptr) throw bad_object_cast{};
-        return unsafe_object_cast<T>(this);
+        return p;
     }
 
     [[nodiscard]] T& operator*()
@@ -841,6 +878,7 @@ public:
     static ptr from(const T* p) noexcept
     {
         ptr r;
+        r.p = const_cast<T*>(p);
         if (p) object::from(object::from(p)).swap(r);
         return r;
     }
@@ -849,26 +887,55 @@ public:
 template<typename T>
 class object::ref : public object
 {
+    template<typename U>
+    friend class ptr;
+
+    template<typename U>
+    friend class ref;
+
+protected:
+    T* p;
+
 public:
     ref(const object& obj)
     {
-        if (obj.type() != type_id<T>()) throw bad_object_cast{};
+        p = std::addressof(const_cast<T&>(object_cast<T>(obj)));
         object::operator=(obj);
     }
 
     ref(object&& obj)
     {
-        if (obj.type() != type_id<T>()) throw bad_object_cast{};
+        p = std::addressof(object_cast<T>(obj));
         object::swap(obj);
     }
 
-    ref(const ptr<T>& p)
+    ref(const object& obj, T* p)
+    {
+        this->p = p ? p : std::addressof(const_cast<T&>(polymorphic_object_cast<T>(obj)));
+        object::operator=(obj);
+    }
+
+    ref(object&& obj, T* p)
+    {
+        this->p = p ? p : std::addressof(polymorphic_object_cast<T>(obj));
+        object::swap(obj);
+    }
+
+    template<typename U>
+    ref(const ref<U>& r) noexcept : object(r), p(r.p) {}
+
+    template<typename U>
+    ref(ref<U>&& r) noexcept : object(std::move(r)), p(r.p) {}
+
+    template<typename U>
+    ref(const ptr<U>& p) : p(p.p)
     {
         if (!p) throw bad_object_cast{};
         object::operator=(p);
     }
 
-    ref(ptr<T>&& p)
+    template<typename U>
+    ref(ptr<U>&& p) : p(p.p)
     {
         if (!p) throw bad_object_cast{};
         object::swap(p);
@@ -876,6 +943,7 @@ public:
 
     void swap(ref& r) noexcept
     {
+        std::swap(p, r.p);
         return object::swap(r);
     }
 
@@ -885,36 +953,39 @@ public:
     }
 
     template<typename... Args>
-    decltype(auto) emplace(Args&&... args)
+    T& emplace(Args&&... args)
     {
-        return object::emplace<T>(std::forward<Args>(args)...);
+        return *(p = std::addressof(object::emplace<T>(std::forward<Args>(args)...)));
+    }
+
+    explicit operator bool() const noexcept
+    {
+        return p != nullptr;
     }
 
     [[nodiscard]] ptr<T> operator&() const noexcept
     {
-        ptr<T> p;
-        object(*this).swap(p);
-        return p;
+        return ptr<T>(*this, p);
     }
 
     operator T&() noexcept
     {
-        return *unsafe_object_cast<T>(this);
+        return *p;
     }
 
     operator const T&() const noexcept
     {
-        return *unsafe_object_cast<T>(this);
+        return *p;
     }
 
     T* operator->() noexcept
     {
-        return unsafe_object_cast<T>(this);
+        return p;
     }
 
     const T* operator->() const noexcept
     {
-        return unsafe_object_cast<T>(this);
+        return p;
     }
 
 #ifdef OBJECT_HAVE_OPERATOR_DOT // someday we could have this
@@ -932,7 +1003,8 @@ public:
     static ref from(const T& t) noexcept
     {
         ref r;
-        object::from(object::from(std::addressof(t))).swap(r);
+        r.p = const_cast<T*>(std::addressof(t));
+        object::from(object::from(r.p)).swap(r);
         return r;
     }
 };
@@ -1134,37 +1206,42 @@ public:
     template<typename... Args>
     explicit fam(std::size_t n, Args&&... args)
     {
-        this->p = holder<T, U[]>::create(n, std::forward<Args>(args)...);
+        auto h = holder<T, U[]>::create(n, std::forward<Args>(args)...);
+        object::p = h;
+        ptr<T>::p = std::addressof(h->value());
     }
 
     fam(const object& obj)
     {
-        if (obj && !dynamic_cast<holder<T, U[]>*>(obj.p)) throw bad_object_cast{};
+        auto h = obj ? dynamic_cast<holder<T, U[]>*>(obj.p) : nullptr;
+        if (obj && !h) throw bad_object_cast{};
         object::operator=(obj);
+        ptr<T>::p = std::addressof(h->value());
     }
 
     fam(object&& obj)
     {
-        if (obj && !dynamic_cast<holder<T, U[]>*>(obj.p)) throw bad_object_cast{};
+        auto h = obj ? dynamic_cast<holder<T, U[]>*>(obj.p) : nullptr;
+        if (obj && !h) throw bad_object_cast{};
         object::swap(obj);
+        ptr<T>::p = std::addressof(h->value());
     }
 
     void swap(fam& f) noexcept
     {
-        return object::swap(f);
+        return ptr<T>::swap(f);
     }
 
     template<typename... Args>
     T& emplace(std::size_t n, Args&&... args)
     {
-        auto q = holder<T, U[]>::create(n, std::forward<Args>(args)...);
-        object((handle)q).swap(*this);
-        return q->value();
+        fam(n, std::forward<Args>(args)...).swap(*this);
+        return ptr<T>::operator*();
     }
 
     vec<U&> array() noexcept
     {
-        if (auto h = static_cast<holder<T, U[]>*>(p))
+        if (auto h = static_cast<holder<T, U[]>*>(object::p))
             return { h->array(), static_cast<std::size_t>(h->length()) };
         return {};
     }

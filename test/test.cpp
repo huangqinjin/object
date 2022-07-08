@@ -632,3 +632,20 @@ TEST_CASE("vec destruct order and alignment")
     CHECK(tracker::seq == 3);
     CHECK(tracker::count == 0);
 }
+
+TEST_CASE("aliasing constructor")
+{
+    struct tracker2 : tracker {};
+
+    object obj = tracker2();
+
+    CHECK_NOTHROW((object::ptr<tracker2>(obj)));
+    CHECK_NOTHROW((object::ptr<tracker2>(obj, nullptr)));
+    CHECK_NOTHROW((object::ptr<tracker>(obj, nullptr)));
+    CHECK_THROWS_AS((object::ptr<tracker>(obj)), bad_object_cast);
+
+    CHECK_NOTHROW((object::ref<tracker2>(obj)));
+    CHECK_NOTHROW((object::ref<tracker2>(obj, nullptr)));
+    CHECK_NOTHROW((object::ref<tracker>(obj, nullptr)));
+    CHECK_THROWS_AS((object::ref<tracker>(obj)), bad_object_cast);
+}
