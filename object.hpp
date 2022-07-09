@@ -206,9 +206,9 @@ protected:
 
     class refcounted
     {
+    public:
         std::atomic<long> refcount = 1;
 
-    public:
         long xref(long c = 1) noexcept
         {
             long r = refcount.load(std::memory_order_relaxed);
@@ -236,6 +236,9 @@ protected:
 
         virtual void destroy() noexcept /* = 0 */
         {
+#if defined(__cpp_lib_atomic_wait)
+            refcount.notify_all();
+#endif
             if (weak.release() != 0) return;
             delete this;
         }
@@ -578,6 +581,19 @@ public:
     explicit operator bool() const noexcept { return p != nullptr; }
     bool expired() const noexcept { return !p || p->count() <= 0; }
     object lock() const noexcept { return object(p && p->xref() ? p : nullptr); }
+
+#if defined(__cpp_lib_atomic_wait)
+    void wait_until_expired() const noexcept
+    {
+        if (!p) return;
+        while (true)
+        {
+            auto c = p->refcount.load(std::memory_order_relaxed);
+            if (c <= 0) break;
+            p->refcount.wait(c, std::memory_order_relaxed);
+        }
+    }
+#endif
 
     [[nodiscard]] operator object() const
     {

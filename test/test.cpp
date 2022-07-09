@@ -710,3 +710,26 @@ TEST_CASE("weak")
     CHECK(!wp.lock());
     CHECK_THROWS_AS((object)wp, bad_weak_object);
 }
+
+#if defined(__cpp_lib_atomic_wait)
+TEST_CASE("weak wait")
+{
+    object obj = 1;
+    object::weak wp = obj;
+
+    std::promise<void> p;
+    auto f = p.get_future();
+    std::thread t([&]{
+        CHECK(wp.expired() == false);
+        p.set_value();
+        wp.wait_until_expired();
+        CHECK(wp.expired() == true);
+    });
+    f.wait();
+
+    obj = {};
+
+    t.join();
+    CHECK(wp.expired() == true);
+}
+#endif
