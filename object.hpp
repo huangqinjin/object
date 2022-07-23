@@ -142,11 +142,13 @@ protected:
     };
 
     template<typename T>
-    class alignas((std::max)(alignof(std::ptrdiff_t), alignof(T))) held<T[]>
+    class held<T[]>
     {
         const std::ptrdiff_t n;
 
     public:
+        static constexpr std::size_t alignment = (std::max)(alignof(std::ptrdiff_t), alignof(T));
+
         explicit held(std::ptrdiff_t n, void* this1) : n(n)
         {
             std::uninitialized_value_construct_n(value(this1), n);
@@ -283,7 +285,8 @@ protected:
     };
 
     template<typename T>
-    class holder<T[]> final : public placeholder, public held<T[]>
+    class alignas((std::max)(held<T[]>::alignment, alignof(placeholder))) holder<T[]> final
+        : public placeholder, public held<T[]>
     {
         [[nodiscard]] type_index type() const noexcept final { return type_id<T[]>(); }
 
@@ -353,7 +356,8 @@ protected:
     };
 
     template<typename T, typename U>
-    class holder<T, U[]> final : public holder<T>, public held<U[]>
+    class alignas((std::max)(held<U[]>::alignment, alignof(holder<T>))) holder<T, U[]> final
+        : public holder<T>, public held<U[]>
     {
         void destroy() noexcept override
         {

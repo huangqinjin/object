@@ -733,3 +733,55 @@ TEST_CASE("weak wait")
     CHECK(wp.expired() == true);
 }
 #endif
+
+TEST_CASE("alignment")
+{
+    struct alignas(__STDCPP_DEFAULT_NEW_ALIGNMENT__ * 8) A
+    {
+        A() noexcept
+        {
+            CHECK((std::uintptr_t)this % alignof(A) == 0);
+        }
+    };
+
+    struct placeholder
+    {
+        std::atomic<long> strong_ref_counter;
+        std::atomic<long> weak_ref_counter;
+        void* vptr;
+    };
+
+    SECTION("vec")
+    {
+        struct holder : placeholder
+        {
+            std::ptrdiff_t array_length;
+        };
+
+        object::vec<A> v(2);
+
+        auto p = *reinterpret_cast<const unsigned char**>(std::addressof(v));
+        auto a = reinterpret_cast<const unsigned char*>(v.data());
+
+        CHECK((std::uintptr_t)p % alignof(A) == 0);
+        CHECK(p + (sizeof(holder) + alignof(A) - 1) / alignof(A) * alignof(A) == a);
+    }
+
+    SECTION("fam")
+    {
+        using T = char;
+        object::fam<T, A> v(2);
+
+        struct holder : placeholder
+        {
+            T obj;
+            std::ptrdiff_t array_length;
+        };
+
+        auto p = *reinterpret_cast<const unsigned char**>(std::addressof(v));
+        auto a = reinterpret_cast<const unsigned char*>(v.array().data());
+
+        CHECK((std::uintptr_t)p % alignof(A) == 0);
+        CHECK(p + (sizeof(holder) + alignof(A) - 1) / alignof(A) * alignof(A) == a);
+    }
+}
