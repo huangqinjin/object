@@ -12,8 +12,8 @@
 #include <cassert>
 #include <atomic>
 #include <utility>        // move, exchange, in_place_type_t
-#include <memory>         // uninitialized_value_construct_n
-#include <new>            // operator new, operator delete, align_val_t, bad_array_new_length, launder
+#include <memory>         // uninitialized_value_construct_n, uninitialized_default_construct_n
+#include <new>            // operator new, operator delete, align_val_t, launder
 #include <stdexcept>      // out_of_range
 #include <algorithm>      // copy_n, fill_n, max
 #include <string>
@@ -149,9 +149,10 @@ protected:
     public:
         static constexpr std::size_t alignment = (std::max)(alignof(std::ptrdiff_t), alignof(T));
 
-        explicit held(std::ptrdiff_t n, void* this1) : n(n)
+        explicit held(std::ptrdiff_t n, void* this1) : n(std::abs(n))
         {
-            std::uninitialized_value_construct_n(value(this1), n);
+            if (n > 0) std::uninitialized_value_construct_n(value(this1), this->n);
+            else std::uninitialized_default_construct_n(value(this1), this->n);
         }
 
         void destruct(void* this1)
@@ -303,8 +304,7 @@ protected:
 
         [[nodiscard]] static auto create(std::ptrdiff_t n)
         {
-            if(n < 0) throw std::bad_array_new_length();
-            return new(n) holder(n);
+            return new(std::abs(n)) holder(n);
         }
     };
 
@@ -380,8 +380,7 @@ protected:
         template<typename... Args>
         [[nodiscard]] static auto create(std::ptrdiff_t n, Args&&... args)
         {
-            if(n < 0) throw std::bad_array_new_length();
-            return new(n) holder(n, std::forward<Args>(args)...);
+            return new(std::abs(n)) holder(n, std::forward<Args>(args)...);
         }
     };
 
@@ -1225,7 +1224,7 @@ class object::vec : public object
 public:
     vec() = default;
 
-    explicit vec(std::size_t n)
+    explicit vec(std::ptrdiff_t n)
     {
         if (n != 0) object::emplace<T[]>(n);
     }
@@ -1247,7 +1246,7 @@ public:
     {
         if (count > 0)
         {
-            std::copy_n(first, count, object::emplace<T[]>(count));
+            std::copy_n(first, count, object::emplace<T[]>(-static_cast<std::ptrdiff_t>(count)));
         }
     }
 
@@ -1376,7 +1375,7 @@ public:
     fam() = default;
 
     template<typename... Args>
-    explicit fam(std::size_t n, Args&&... args)
+    explicit fam(std::ptrdiff_t n, Args&&... args)
     {
         auto h = holder<T, U[]>::create(n, std::forward<Args>(args)...);
         object::p = h;
@@ -1405,7 +1404,7 @@ public:
     }
 
     template<typename... Args>
-    T& emplace(std::size_t n, Args&&... args)
+    T& emplace(std::ptrdiff_t n, Args&&... args)
     {
         fam(n, std::forward<Args>(args)...).swap(*this);
         return ptr<T>::operator*();
@@ -1523,7 +1522,7 @@ public:
 
     str(std::size_t count, CharT ch)
     {
-        vec<CharT> v(count + 1);
+        vec<CharT> v(-static_cast<std::ptrdiff_t>(count + 1));
         std::fill_n(v.data(), count, ch);
         v.back() = CharT{};
         p = v.data();
@@ -1533,7 +1532,7 @@ public:
     template<typename Traits>
     str(std::basic_string_view<CharT, Traits> s) : p(nullptr)
     {
-        vec<CharT> v(s.size() + 1);
+        vec<CharT> v(-static_cast<std::ptrdiff_t>(s.size() + 1));
         std::copy_n(s.data(), s.size(), v.data());
         v.back() = CharT{};
         p = v.data();
