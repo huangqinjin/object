@@ -24,6 +24,28 @@ class bad_object_cast : public std::exception {};
 class object_not_fn : public bad_object_cast {};
 class bad_weak_object : public std::exception {};
 
+class object__weak;
+
+class object__atomic;
+
+template<typename F>
+class object__fn;
+
+template<typename T>
+class object__ptr;
+
+template<typename T>
+class object__ref;
+
+template<typename T>
+class object__vec;
+
+template<typename T, typename U>
+class object__fam;
+
+template<typename CharT>
+class object__str;
+
 class object
 {
     template<typename T>
@@ -387,27 +409,41 @@ protected:
     };
 
 public:
-    class weak;
+    using weak = object__weak;
+    friend class object__weak;
 
-    class atomic;
+    using atomic = object__atomic;
+    friend class object__atomic;
 
     template<typename F>
-    class fn;
+    using fn = object__fn<F>;
+    template<typename F>
+    friend class object__fn;
 
     template<typename T>
-    class ptr;
+    using ptr = object__ptr<T>;
+    template<typename T>
+    friend class object__ptr;
 
     template<typename T>
-    class ref;
+    using ref = object__ref<T>;
+    template<typename T>
+    friend class object__ref;
 
     template<typename T>
-    class vec;
+    using vec = object__vec<T>;
+    template<typename T>
+    friend class object__vec;
 
     template<typename T, typename U>
-    class fam;
+    using fam = object__fam<T, U>;
+    template<typename T, typename U>
+    friend class object__fam;
 
     template<typename CharT>
-    class str;
+    using str = object__str<CharT>;
+    template<typename CharT>
+    friend class object__str;
 
     using ls = str<char>;
     using ws = str<wchar_t>;
@@ -561,27 +597,29 @@ CAST(polymorphic_object_cast)
 #undef CAST
 
 
-class object::weak
+class object__weak
 {
+    using handle = object::handle;
+    using placeholder = object::placeholder;
     placeholder* p;
 
 public:
-    weak() noexcept : p(nullptr) {}
-    explicit weak(handle p) noexcept : p(p) {}
-    weak(const object& obj) noexcept : p(obj.p) { if (p) p->weak.addref(); }
-    weak(const weak& w) noexcept : p(w.p) { if (p) p->weak.addref(); }
-    weak(weak&& w) noexcept : p(w.p) { w.p = nullptr; }
-    ~weak() { if (p && p->weak.release() == 0) delete p; }
-    void swap(weak& w) noexcept { std::swap(p, w.p); }
-    weak& operator=(const weak& w) noexcept { if (p != w.p) weak(w).swap(*this); return *this; }
-    weak& operator=(weak&& w) noexcept { if (p != w.p) weak(std::move(w)).swap(*this); return *this; }
+    object__weak() noexcept : p(nullptr) {}
+    explicit object__weak(handle p) noexcept : p(p) {}
+    object__weak(const object& obj) noexcept : p(obj.p) { if (p) p->weak.addref(); }
+    object__weak(const object__weak& w) noexcept : p(w.p) { if (p) p->weak.addref(); }
+    object__weak(object__weak&& w) noexcept : p(w.p) { w.p = nullptr; }
+    ~object__weak() { if (p && p->weak.release() == 0) delete p; }
+    void swap(object__weak& w) noexcept { std::swap(p, w.p); }
+    object__weak& operator=(const object__weak& w) noexcept { if (p != w.p) object__weak(w).swap(*this); return *this; }
+    object__weak& operator=(object__weak&& w) noexcept { if (p != w.p) object__weak(std::move(w)).swap(*this); return *this; }
 
-    bool operator==(const weak& w) const noexcept { return p == w.p; }
-    bool operator!=(const weak& w) const noexcept { return p != w.p; }
-    bool operator< (const weak& w) const noexcept { return p <  w.p; }
-    bool operator> (const weak& w) const noexcept { return p >  w.p; }
-    bool operator<=(const weak& w) const noexcept { return p <= w.p; }
-    bool operator>=(const weak& w) const noexcept { return p >= w.p; }
+    bool operator==(const object__weak& w) const noexcept { return p == w.p; }
+    bool operator!=(const object__weak& w) const noexcept { return p != w.p; }
+    bool operator< (const object__weak& w) const noexcept { return p <  w.p; }
+    bool operator> (const object__weak& w) const noexcept { return p >  w.p; }
+    bool operator<=(const object__weak& w) const noexcept { return p <= w.p; }
+    bool operator>=(const object__weak& w) const noexcept { return p >= w.p; }
 
     explicit operator bool() const noexcept { return p != nullptr; }
     bool expired() const noexcept { return !p || p->count() <= 0; }
@@ -612,21 +650,23 @@ public:
         return std::exchange(p, nullptr);
     }
 
-    static weak from(placeholder* p) noexcept
+    static object__weak from(placeholder* p) noexcept
     {
         p->weak.addref();
-        return weak(p);
+        return object__weak(p);
     }
 
     template<typename T, typename... Ts>
-    static std::enable_if_t<!std::is_base_of_v<placeholder, T>, weak> from(const T* p) noexcept
+    static std::enable_if_t<!std::is_base_of_v<placeholder, T>, object__weak> from(const T* p) noexcept
     {
         return from(object::from<T, Ts...>(p));
     }
 };
 
-class object::atomic
+class object__atomic
 {
+    using handle = object::handle;
+    using placeholder = object::placeholder;
     using storage_t = std::uintptr_t;
     enum : storage_t
     {
@@ -683,14 +723,14 @@ public:
     static constexpr bool is_always_lock_free = false;
     bool is_lock_free() const noexcept { return is_always_lock_free; }
 
-    atomic(const atomic&) = delete;
-    atomic& operator=(const atomic&) = delete;
-    atomic() noexcept : storage(storage_t{}) {}
+    object__atomic(const object__atomic&) = delete;
+    object__atomic& operator=(const object__atomic&) = delete;
+    object__atomic() noexcept : storage(storage_t{}) {}
 
-    atomic(object obj) noexcept
+    object__atomic(object obj) noexcept
         : storage(reinterpret_cast<storage_t>(obj.release())) {}
 
-    ~atomic() noexcept
+    ~object__atomic() noexcept
     {
         auto v = storage.load(std::memory_order_relaxed) & ~mask;
         (void)object(reinterpret_cast<handle>(v));
@@ -874,26 +914,26 @@ public:
 };
 
 template<typename R, typename... Args>
-class object::fn<R(Args...)> : public object
+class object__fn<R(Args...)> : public object
 {
     template<typename F>
-    using enable = std::enable_if_t<!std::is_base_of_v<fn, F> &&
+    using enable = std::enable_if_t<!std::is_base_of_v<object__fn, F> &&
                                     std::is_invocable_r_v<R, F, Args...>>;
 public:
-    fn() noexcept = default;
+    object__fn() noexcept = default;
 
     template<typename T, typename F = typename is_in_place_type<std::decay_t<T>>::type,
              typename = enable<F>, typename... A>
-    fn(T&& t, A&&... a) : object(std::in_place_type<R(Args...)>, std::forward<T>(t), std::forward<A>(a)...) {}
+    object__fn(T&& t, A&&... a) : object(std::in_place_type<R(Args...)>, std::forward<T>(t), std::forward<A>(a)...) {}
 
     template<typename Object, typename = std::enable_if_t<std::is_same_v<rmcvr<Object>, object>>>
-    fn(Object&& obj)
+    object__fn(Object&& obj)
     {
         if (obj && obj.type() != type_id<R(Args...)>()) throw object_not_fn{};
         object::operator=(std::forward<Object>(obj));
     }
 
-    void swap(fn& f) noexcept
+    void swap(object__fn& f) noexcept
     {
         return object::swap(f);
     }
@@ -914,27 +954,27 @@ public:
 };
 
 template<typename R, typename... Args>
-class object::fn<R(&)(Args...)>         // std::function_ref
+class object__fn<R(&)(Args...)>         // std::function_ref
 {
     void* o;
     R (*f)(void*, Args...);
 
     static R callobj(void* o, Args... args)
     {
-        return static_cast<R>((*static_cast<fn<R(Args...)>*>(o))(
+        return static_cast<R>((*static_cast<object__fn<R(Args...)>*>(o))(
                 std::forward<Args>(args)...));
     }
 
 public:
-    fn(const fn<R(Args...)>& f) : o((void*)std::addressof(f)), f(&callobj)
+    object__fn(const object__fn<R(Args...)>& f) : o((void*)std::addressof(f)), f(&callobj)
     {
         if (!f) throw object_not_fn{};
     }
 
-    template<typename F, typename = std::enable_if_t<!std::is_base_of_v<fn<R(Args...)>, rmcvr<F>> &&
-                                                     !std::is_base_of_v<fn<R(&)(Args...)>, rmcvr<F>> &&
+    template<typename F, typename = std::enable_if_t<!std::is_base_of_v<object__fn<R(Args...)>, object::rmcvr<F>> &&
+                                                     !std::is_base_of_v<object__fn<R(&)(Args...)>, object::rmcvr<F>> &&
                                                      std::is_invocable_r_v<R, F, Args...>>>
-    fn(F&& f) noexcept : o((void*)std::addressof(f))
+    object__fn(F&& f) noexcept : o((void*)std::addressof(f))
     {
         this->f = [](void* o, Args... args) -> R
         {
@@ -944,14 +984,14 @@ public:
     }
 
     template<typename Object, typename = std::enable_if_t<std::is_same_v<Object, object>>>
-    fn(const Object& obj) : o((void*)std::addressof(obj)), f(&callobj)
+    object__fn(const Object& obj) : o((void*)std::addressof(obj)), f(&callobj)
     {
         if (obj.type() != object::type_id<R(Args...)>()) throw object_not_fn{};
     }
 
-    fn<R(Args...)> object() const noexcept
+    object__fn<R(Args...)> object() const noexcept
     {
-        return f == &callobj ? *static_cast<fn<R(Args...)>*>(o) : fn<R(Args...)>{};
+        return f == &callobj ? *static_cast<object__fn<R(Args...)>*>(o) : object__fn<R(Args...)>{};
     }
 
     R operator()(Args... args) const
@@ -961,33 +1001,33 @@ public:
 };
 
 template<typename T>
-class object::ptr : public object
+class object__ptr : public object
 {
     template<typename U>
-    friend class ptr;
+    friend class object__ptr;
 
     template<typename U>
-    friend class ref;
+    friend class object__ref;
 
 protected:
     T* p;
 
 public:
-    ptr() noexcept : p(nullptr) {}
+    object__ptr() noexcept : p(nullptr) {}
 
-    ptr(const object& obj)
+    object__ptr(const object& obj)
     {
         p = obj ? std::addressof(const_cast<T&>(object_cast<T>(obj))) : nullptr;
         object::operator=(obj);
     }
 
-    ptr(object&& obj)
+    object__ptr(object&& obj)
     {
         p = obj ? std::addressof(object_cast<T>(obj)) : nullptr;
         object::swap(obj);
     }
 
-    ptr(const object& obj, T* p)
+    object__ptr(const object& obj, T* p)
     {
         if (p) this->p = p;
         else if (obj) this->p = std::addressof(const_cast<T&>(polymorphic_object_cast<T>(obj)));
@@ -995,7 +1035,7 @@ public:
         object::operator=(obj);
     }
 
-    ptr(object&& obj, T* p)
+    object__ptr(object&& obj, T* p)
     {
         if (p) this->p = p;
         else if (obj) this->p = std::addressof(polymorphic_object_cast<T>(obj));
@@ -1004,12 +1044,12 @@ public:
     }
 
     template<typename U>
-    ptr(const ptr<U>& p) noexcept : object(p), p(p.p) {}
+    object__ptr(const object__ptr<U>& p) noexcept : object(p), p(p.p) {}
 
     template<typename U>
-    ptr(ptr<U>&& p) noexcept : object(std::move(p)), p(p.p) {}
+    object__ptr(object__ptr<U>&& p) noexcept : object(std::move(p)), p(p.p) {}
 
-    void swap(ptr& p) noexcept
+    void swap(object__ptr& p) noexcept
     {
         std::swap(this->p, p.p);
         return object::swap(p);
@@ -1048,9 +1088,9 @@ public:
         return *operator->();
     }
 
-    static ptr from(const T* p) noexcept
+    static object__ptr from(const T* p) noexcept
     {
-        ptr r;
+        object__ptr r;
         r.p = const_cast<T*>(p);
         if (p) object::from(object::from(p)).swap(r);
         return r;
@@ -1058,63 +1098,63 @@ public:
 };
 
 template<typename T>
-class object::ref : public object
+class object__ref : public object
 {
     template<typename U>
-    friend class ptr;
+    friend class object__ptr;
 
     template<typename U>
-    friend class ref;
+    friend class object__ref;
 
 protected:
     T* p;
 
 public:
-    ref(const object& obj)
+    object__ref(const object& obj)
     {
         p = std::addressof(const_cast<T&>(object_cast<T>(obj)));
         object::operator=(obj);
     }
 
-    ref(object&& obj)
+    object__ref(object&& obj)
     {
         p = std::addressof(object_cast<T>(obj));
         object::swap(obj);
     }
 
-    ref(const object& obj, T* p)
+    object__ref(const object& obj, T* p)
     {
         this->p = p ? p : std::addressof(const_cast<T&>(polymorphic_object_cast<T>(obj)));
         object::operator=(obj);
     }
 
-    ref(object&& obj, T* p)
+    object__ref(object&& obj, T* p)
     {
         this->p = p ? p : std::addressof(polymorphic_object_cast<T>(obj));
         object::swap(obj);
     }
 
     template<typename U>
-    ref(const ref<U>& r) noexcept : object(r), p(r.p) {}
+    object__ref(const object__ref<U>& r) noexcept : object(r), p(r.p) {}
 
     template<typename U>
-    ref(ref<U>&& r) noexcept : object(std::move(r)), p(r.p) {}
+    object__ref(object__ref<U>&& r) noexcept : object(std::move(r)), p(r.p) {}
 
     template<typename U>
-    ref(const ptr<U>& p) : p(p.p)
+    object__ref(const object__ptr<U>& p) : p(p.p)
     {
         if (!p) throw bad_object_cast{};
         object::operator=(p);
     }
 
     template<typename U>
-    ref(ptr<U>&& p) : p(p.p)
+    object__ref(object__ptr<U>&& p) : p(p.p)
     {
         if (!p) throw bad_object_cast{};
         object::swap(p);
     }
 
-    void swap(ref& r) noexcept
+    void swap(object__ref& r) noexcept
     {
         std::swap(p, r.p);
         return object::swap(r);
@@ -1136,9 +1176,9 @@ public:
         return p != nullptr;
     }
 
-    [[nodiscard]] ptr<T> operator&() const noexcept
+    [[nodiscard]] object__ptr<T> operator&() const noexcept
     {
-        return ptr<T>(*this, p);
+        return object__ptr<T>(*this, p);
     }
 
     operator T&() noexcept
@@ -1173,9 +1213,9 @@ public:
     }
 #endif
 
-    static ref from(const T& t) noexcept
+    static object__ref from(const T& t) noexcept
     {
-        ref r;
+        object__ref r;
         r.p = const_cast<T*>(std::addressof(t));
         object::from(object::from(r.p)).swap(r);
         return r;
@@ -1183,7 +1223,7 @@ public:
 };
 
 template<typename T>
-class object::vec<T&>         // std::span
+class object__vec<T&>         // std::span
 {
 public:
     using element_type     = T;
@@ -1198,10 +1238,10 @@ public:
 //  using reverse_iterator = std::reverse_iterator<iterator>;
 
     template<typename R>
-    vec(R&& r) noexcept : p(std::data(r)), n(std::size(r)) {}
+    object__vec(R&& r) noexcept : p(std::data(r)), n(std::size(r)) {}
 
-    vec() noexcept : p(nullptr), n(0) {}
-    vec(pointer p, size_type n) noexcept : p(p), n(n) {}
+    object__vec() noexcept : p(nullptr), n(0) {}
+    object__vec(pointer p, size_type n) noexcept : p(p), n(n) {}
     pointer data() const noexcept { return p; }
     size_type size() const noexcept { return n; }
     bool empty() const noexcept { return n == 0; }
@@ -1211,9 +1251,9 @@ public:
     reference back() const noexcept { return p[n - 1]; }
     reference operator[](size_type i) const noexcept { return p[i]; }
     size_type size_bytes() const noexcept { return n * sizeof(element_type); }
-    vec subspan(size_type offset, size_type count) const noexcept { return {p + offset, count}; }
-    vec first(size_type count) const noexcept { return {p, count}; }
-    vec last(size_type count) const noexcept { return {p + (n - count), count}; }
+    object__vec subspan(size_type offset, size_type count) const noexcept { return {p + offset, count}; }
+    object__vec first(size_type count) const noexcept { return {p, count}; }
+    object__vec last(size_type count) const noexcept { return {p + (n - count), count}; }
 
 private:
     pointer p;
@@ -1221,30 +1261,30 @@ private:
 };
 
 template<typename T>
-class object::vec : public object
+class object__vec : public object
 {
 public:
-    vec() = default;
+    object__vec() = default;
 
-    explicit vec(std::ptrdiff_t n)
+    explicit object__vec(std::ptrdiff_t n)
     {
         if (n != 0) object::emplace<T[]>(n);
     }
 
-    vec(const object& obj)
+    object__vec(const object& obj)
     {
         if (obj && obj.type() != type_id<T[]>()) throw bad_object_cast{};
         object::operator=(obj);
     }
 
-    vec(object&& obj)
+    object__vec(object&& obj)
     {
         if (obj && obj.type() != type_id<T[]>()) throw bad_object_cast{};
         object::swap(obj);
     }
 
     template<typename InputIt, typename Size>
-    vec(InputIt first, Size count)
+    object__vec(InputIt first, Size count)
     {
         if (count > 0)
         {
@@ -1252,32 +1292,32 @@ public:
         }
     }
 
-    vec(std::initializer_list<T> list) : vec(list.begin(), list.size())
+    object__vec(std::initializer_list<T> list) : object__vec(list.begin(), list.size())
     {
     }
 
-    void swap(vec& v) noexcept
+    void swap(object__vec& v) noexcept
     {
         return object::swap(v);
     }
 
-    vec<T&> emplace(std::ptrdiff_t n)
+    object__vec<T&> emplace(std::ptrdiff_t n)
     {
         if (n != 0) object::emplace<T[]>(n);
         else object().swap(*this);
         return *this;
     }
 
-    operator vec<T&>() noexcept
+    operator object__vec<T&>() noexcept
     {
         if (auto h = static_cast<holder<T[]>*>(p))
             return { h->value(), static_cast<std::size_t>(h->length()) };
         return {};
     }
 
-    operator vec<const T&>() const noexcept
+    operator object__vec<const T&>() const noexcept
     {
-        return const_cast<vec*>(this)->operator vec<T&>();
+        return const_cast<object__vec*>(this)->operator object__vec<T&>();
     }
 
     T* data() noexcept
@@ -1289,7 +1329,7 @@ public:
 
     const T* data() const noexcept
     {
-        return const_cast<vec*>(this)->data();
+        return const_cast<object__vec*>(this)->data();
     }
 
     std::size_t size() const noexcept
@@ -1311,7 +1351,7 @@ public:
 
     const T& operator[](std::size_t i) const noexcept
     {
-        return const_cast<vec*>(this)->operator[](i);
+        return const_cast<object__vec*>(this)->operator[](i);
     }
 
     T& at(std::size_t i)
@@ -1322,7 +1362,7 @@ public:
 
     const T& at(std::size_t i) const
     {
-        return const_cast<vec*>(this)->at(i);
+        return const_cast<object__vec*>(this)->at(i);
     }
 
     T& front() noexcept
@@ -1361,119 +1401,119 @@ public:
 
     const T* begin() const noexcept
     {
-        return const_cast<vec*>(this)->begin();
+        return const_cast<object__vec*>(this)->begin();
     }
 
     const T* end() const noexcept
     {
-        return const_cast<vec*>(this)->end();
+        return const_cast<object__vec*>(this)->end();
     }
 };
 
 template<typename T, typename U>
-class object::fam : public ptr<T>         // flexible array member
+class object__fam : public object__ptr<T>         // flexible array member
 {
 public:
-    fam() = default;
+    object__fam() = default;
 
     template<typename... Args>
-    explicit fam(std::ptrdiff_t n, Args&&... args)
+    explicit object__fam(std::ptrdiff_t n, Args&&... args)
     {
-        auto h = holder<T, U[]>::create(n, std::forward<Args>(args)...);
+        auto h = object::holder<T, U[]>::create(n, std::forward<Args>(args)...);
         object::p = h;
-        ptr<T>::p = std::addressof(h->value());
+        object__ptr<T>::p = std::addressof(h->value());
     }
 
-    fam(const object& obj)
+    object__fam(const object& obj)
     {
-        auto h = obj ? dynamic_cast<holder<T, U[]>*>(obj.p) : nullptr;
+        auto h = obj ? dynamic_cast<object::holder<T, U[]>*>(obj.p) : nullptr;
         if (obj && !h) throw bad_object_cast{};
         object::operator=(obj);
-        ptr<T>::p = std::addressof(h->value());
+        object__ptr<T>::p = std::addressof(h->value());
     }
 
-    fam(object&& obj)
+    object__fam(object&& obj)
     {
-        auto h = obj ? dynamic_cast<holder<T, U[]>*>(obj.p) : nullptr;
+        auto h = obj ? dynamic_cast<object::holder<T, U[]>*>(obj.p) : nullptr;
         if (obj && !h) throw bad_object_cast{};
         object::swap(obj);
-        ptr<T>::p = std::addressof(h->value());
+        object__ptr<T>::p = std::addressof(h->value());
     }
 
-    void swap(fam& f) noexcept
+    void swap(object__fam& f) noexcept
     {
-        return ptr<T>::swap(f);
+        return object__ptr<T>::swap(f);
     }
 
     template<typename... Args>
     T& emplace(std::ptrdiff_t n, Args&&... args)
     {
-        fam(n, std::forward<Args>(args)...).swap(*this);
-        return ptr<T>::operator*();
+        object__fam(n, std::forward<Args>(args)...).swap(*this);
+        return object__ptr<T>::operator*();
     }
 
-    vec<U&> array() noexcept
+    object__vec<U&> array() noexcept
     {
-        if (auto h = static_cast<holder<T, U[]>*>(object::p))
+        if (auto h = static_cast<object::holder<T, U[]>*>(object::p))
             return { h->array(), static_cast<std::size_t>(h->length()) };
         return {};
     }
 
-    vec<const U&> array() const noexcept
+    object__vec<const U&> array() const noexcept
     {
-        return const_cast<fam*>(this)->array();
+        return const_cast<object__fam*>(this)->array();
     }
 
-    static vec<U&> array(T* p) noexcept
+    static object__vec<U&> array(T* p) noexcept
     {
         if (!p) return {};
         auto h = object::from<T, U[]>(p);
         return { h->array(), static_cast<std::size_t>(h->length()) };
     }
 
-    static vec<const U&> array(const T* p) noexcept
+    static object__vec<const U&> array(const T* p) noexcept
     {
         return array(const_cast<T*>(p));
     }
 
-    static fam from(const T* p) noexcept
+    static object__fam from(const T* p) noexcept
     {
-        fam r;
-        ptr<T>::from(p).swap(r);
+        object__fam r;
+        object__ptr<T>::from(p).swap(r);
         return r;
     }
 };
 
 template<typename CharT>
-class object::str         // ATL::CStringT
+class object__str         // ATL::CStringT
 {
     CharT* p;
 
-    holder<CharT[]>* storage() const noexcept
+    ::object::holder<CharT[]>* storage() const noexcept
     {
-        return object::from<CharT[]>(reinterpret_cast<CharT(*)[]>(p));
+        return ::object::from<CharT[]>(reinterpret_cast<CharT(*)[]>(p));
     }
 
 public:
-    vec<CharT> object() const noexcept
+    object__vec<CharT> object() const noexcept
     {
-        vec<CharT> v;
+        object__vec<CharT> v;
         if (p) (v.p = storage())->addref();
         return v;
     }
 
-    str(const class object& obj) : p(nullptr)
+    object__str(const class object& obj) : p(nullptr)
     {
-        vec<CharT> v(obj);
+        object__vec<CharT> v(obj);
         if (!v.empty() && v.back() != CharT{})
             throw bad_object_cast{};
         p = v.data();
         (void)v.release();
     }
 
-    str(class object&& obj)
+    object__str(class object&& obj)
     {
-        vec<CharT> v(std::move(obj));
+        object__vec<CharT> v(std::move(obj));
         if (!v.empty() && v.back() != CharT{})
         {
             obj.swap(v);
@@ -1483,23 +1523,23 @@ public:
         (void)v.release();
     }
 
-    str() noexcept : p(nullptr) {}
-    str(std::nullptr_t) noexcept : str() {}
-    str(str&& s) noexcept : p(s.p) { s.p = nullptr; }
-    str(const str& s) noexcept : p(s.p) { (void)object().release(); }
-    ~str() { if (p) (void)(class object)((handle)storage()); }
-    void swap(str& s) noexcept { std::swap(p, s.p); }
+    object__str() noexcept : p(nullptr) {}
+    object__str(std::nullptr_t) noexcept : object__str() {}
+    object__str(object__str&& s) noexcept : p(s.p) { s.p = nullptr; }
+    object__str(const object__str& s) noexcept : p(s.p) { (void)object().release(); }
+    ~object__str() { if (p) (void)(class object)((object::handle)storage()); }
+    void swap(object__str& s) noexcept { std::swap(p, s.p); }
 
-    str& operator=(std::nullptr_t) noexcept { str().swap(*this); return *this; }
-    str& operator=(const str& s) noexcept { if (p != s.p) str(s).swap(*this); return *this; }
-    str& operator=(str&& s) noexcept { if (p != s.p) str(std::move(s)).swap(s); return *this; }
+    object__str& operator=(std::nullptr_t) noexcept { object__str().swap(*this); return *this; }
+    object__str& operator=(const object__str& s) noexcept { if (p != s.p) object__str(s).swap(*this); return *this; }
+    object__str& operator=(object__str&& s) noexcept { if (p != s.p) object__str(std::move(s)).swap(s); return *this; }
 
-    bool operator==(const str& s) const noexcept { return p == s.p; }
-    bool operator!=(const str& s) const noexcept { return p != s.p; }
-    bool operator< (const str& s) const noexcept { return p <  s.p; }
-    bool operator> (const str& s) const noexcept { return p >  s.p; }
-    bool operator<=(const str& s) const noexcept { return p <= s.p; }
-    bool operator>=(const str& s) const noexcept { return p >= s.p; }
+    bool operator==(const object__str& s) const noexcept { return p == s.p; }
+    bool operator!=(const object__str& s) const noexcept { return p != s.p; }
+    bool operator< (const object__str& s) const noexcept { return p <  s.p; }
+    bool operator> (const object__str& s) const noexcept { return p >  s.p; }
+    bool operator<=(const object__str& s) const noexcept { return p <= s.p; }
+    bool operator>=(const object__str& s) const noexcept { return p >= s.p; }
 
     [[nodiscard]] operator class object() const noexcept { return object(); }
     [[nodiscard]] operator const CharT*() const noexcept { return p; }
@@ -1522,9 +1562,9 @@ public:
         return p ? p : std::addressof(null);
     }
 
-    str(std::size_t count, CharT ch)
+    object__str(std::size_t count, CharT ch)
     {
-        vec<CharT> v(-static_cast<std::ptrdiff_t>(count + 1));
+        object__vec<CharT> v(-static_cast<std::ptrdiff_t>(count + 1));
         std::fill_n(v.data(), count, ch);
         v.back() = CharT{};
         p = v.data();
@@ -1532,9 +1572,9 @@ public:
     }
 
     template<typename Traits>
-    str(std::basic_string_view<CharT, Traits> s) : p(nullptr)
+    object__str(std::basic_string_view<CharT, Traits> s) : p(nullptr)
     {
-        vec<CharT> v(-static_cast<std::ptrdiff_t>(s.size() + 1));
+        object__vec<CharT> v(-static_cast<std::ptrdiff_t>(s.size() + 1));
         std::copy_n(s.data(), s.size(), v.data());
         v.back() = CharT{};
         p = v.data();
@@ -1542,32 +1582,32 @@ public:
     }
 
     template<typename Traits>
-    str(const std::basic_string<CharT, Traits>& s)
-        : str(std::basic_string_view<CharT, Traits>(s))
+    object__str(const std::basic_string<CharT, Traits>& s)
+        : object__str(std::basic_string_view<CharT, Traits>(s))
     {
     }
 
-    str(const CharT* s) : str(std::basic_string_view<CharT>(s))
+    object__str(const CharT* s) : object__str(std::basic_string_view<CharT>(s))
     {
     }
 
     template<typename Traits>
-    str& operator=(std::basic_string_view<CharT, Traits> s)
+    object__str& operator=(std::basic_string_view<CharT, Traits> s)
     {
-        str(s).swap(*this);
+        object__str(s).swap(*this);
         return *this;
     }
 
     template<typename Traits>
-    str& operator=(const std::basic_string<CharT, Traits>& s)
+    object__str& operator=(const std::basic_string<CharT, Traits>& s)
     {
-        str(s).swap(*this);
+        object__str(s).swap(*this);
         return *this;
     }
 
-    str& operator=(const CharT* s)
+    object__str& operator=(const CharT* s)
     {
-        str(s).swap(*this);
+        object__str(s).swap(*this);
         return *this;
     }
 
