@@ -11,8 +11,9 @@
 #include <type_traits>
 #include <cassert>
 #include <atomic>
-#include <utility>        // move, exchange, in_place_type_t
-#include <memory>         // uninitialized_value_construct_n, uninitialized_default_construct_n
+#include <cstdint>        // uintptr_t
+#include <utility>        // move, forward, exchange, in_place_type_t, integer_sequence
+#include <memory>         // addressof, uninitialized_value_construct_n, uninitialized_default_construct_n
 #include <new>            // operator new, operator delete, align_val_t, launder
 #include <stdexcept>      // out_of_range
 #include <algorithm>      // copy_n, fill_n, max
@@ -198,7 +199,7 @@ protected:
 
         auto value(void* this1 /*= this + 1*/) noexcept -> T(&)[]
         {
-            return *std::launder(reinterpret_cast<T(*)[]>(this1));
+            return */*std::launder*/(static_cast<T(*)[]>(this1));
         }
 
         std::ptrdiff_t length() const noexcept
