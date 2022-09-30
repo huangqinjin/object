@@ -13,3 +13,6 @@ target_compile_options(${PROJECT_NAME} PUBLIC $<$<BOOL:${MSVC}>:/permissive->)
 
 find_package(Threads REQUIRED)
 target_link_libraries(${PROJECT_NAME} PUBLIC Threads::Threads)
+
+
+add_test(NAME ${PROJECT_NAME} COMMAND ${PROJECT_NAME})
