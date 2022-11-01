@@ -5,6 +5,9 @@
 
 #include <thread>
 #include <future>
+#if defined(__cpp_lib_span)
+#include <span>
+#endif
 
 namespace
 {
@@ -785,3 +788,43 @@ TEST_CASE("alignment")
         CHECK(p + (sizeof(holder) + alignof(A) - 1) / alignof(A) * alignof(A) == a);
     }
 }
+
+#if defined(__cpp_lib_ranges)
+TEST_CASE("std::ranges with vec")
+{
+    using T = int;
+
+    static_assert(std::ranges::view<object::vec<T>>);
+    static_assert(std::ranges::view<object::vec<T&>>);
+    static_assert(std::ranges::borrowed_range<object::vec<T&>>);
+
+    int a[] = { 1, 2, 3, 4 };
+    object::vec<int> v(a, 4);
+
+    CHECK(std::ranges::equal(v | std::views::reverse, a | std::views::reverse));
+    CHECK(std::ranges::equal(object::vec<int&>(a) | std::views::drop(1), std::views::counted(a + 1, 3)));
+
+#if defined(__cpp_lib_span)
+    auto bytes = as_bytes(std::span(object::vec<int&>(a)));
+    CHECK(bytes.size() == sizeof(a));
+    CHECK(bytes.data() == (const void*)&a);
+#endif
+}
+
+TEST_CASE("std::ranges with str")
+{
+    static_assert(std::ranges::view<object::str<char>>);
+
+    object::str<char> s = "1 2 3 4";
+    int a[] = { 1, 2, 3, 4 };
+
+#if __cpp_lib_ranges >= 202110L
+    auto ints = s
+        | std::views::split(' ')
+        | std::views::transform([](auto r) { return std::string(r.data(), r.size()); })
+        | std::views::transform([](auto s) { return std::stoi(s); });
+
+    CHECK(std::ranges::equal(a, ints));
+#endif
+}
+#endif

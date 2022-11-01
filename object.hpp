@@ -1512,8 +1512,8 @@ public:
     CharT* data() noexcept { return p; }
     CharT* begin() noexcept { return data(); }
     CharT* end() noexcept { return data() + size(); }
-    CharT* begin() const noexcept { return data(); }
-    CharT* end() const noexcept { return data() + size(); }
+    const CharT* begin() const noexcept { return data(); }
+    const CharT* end() const noexcept { return data() + size(); }
 
     const CharT* c_str() const noexcept
     {
@@ -1577,6 +1577,14 @@ public:
         else return {};
     }
 };
+
+
+#if defined(__cpp_lib_ranges)
+#include <ranges>
+template<typename T> inline constexpr bool std::ranges::enable_borrowed_range<object::vec<T&>> = true;
+template<typename T> inline constexpr bool std::ranges::enable_view<object::vec<T>> = true;
+template<typename T> inline constexpr bool std::ranges::enable_view<object::str<T>> = true;
+#endif
 
 
 #ifdef cobject_handle_copy
