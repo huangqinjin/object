@@ -211,18 +211,19 @@ protected:
     class refcounted
     {
     public:
-        std::atomic<long> refcount = 1;
+        using counter_t = unsigned int;
+        std::atomic<counter_t> refcount = 1;
 
-        long xref(long c = 1) noexcept
+        counter_t xref() noexcept
         {
-            long r = refcount.load(std::memory_order_relaxed);
-            while (r != 0 && !refcount.compare_exchange_weak(r, r + c, std::memory_order_relaxed));
-            return r == 0 ? 0 : r + c;
+            counter_t r = refcount.load(std::memory_order_relaxed);
+            while (r != 0 && !refcount.compare_exchange_weak(r, r + 1, std::memory_order_relaxed));
+            return r == 0 ? 0 : r + 1;
         }
 
-        long count() const noexcept { return refcount.load(std::memory_order_relaxed); }
-        long addref(long c = 1) noexcept { return c + refcount.fetch_add(c, std::memory_order_relaxed); }
-        long release(long c = 1) noexcept { return addref(-c); }
+        counter_t count() const noexcept { return refcount.load(std::memory_order_relaxed); }
+        counter_t addref() noexcept { return refcount.fetch_add(1, std::memory_order_relaxed) + 1; }
+        counter_t release() noexcept { return refcount.fetch_sub(1, std::memory_order_relaxed) - 1; }
     };
 
     class weakable

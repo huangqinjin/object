@@ -749,8 +749,8 @@ TEST_CASE("alignment")
 
     struct placeholder
     {
-        std::atomic<long> strong_ref_counter;
-        std::atomic<long> weak_ref_counter;
+        std::atomic<unsigned> strong_ref_counter;
+        std::atomic<unsigned> weak_ref_counter;
         void* vptr;
     };
 
